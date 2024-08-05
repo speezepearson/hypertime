@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react';
 import { List, Map, Record, Set } from 'immutable';
 
+import './App.css';
+
 type CalTime = number & { __type: 'CalTime' };
 type Hypertime = number & { __type: 'Hypertime' };
 type RealTime = number & { __type: 'RealTime' };
@@ -19,75 +21,65 @@ type Ruleset = {
 };
 type Res<T> = { type: 'ok', val: T } | { type: 'err', err: string };
 
-function RulesetEditor({ onChange }: { onChange: (ruleset: Ruleset) => void }) {
-  const [textF, setTextF] = useState('');
+function parseRuleset(s: string): Res<Ruleset> {
 
-  const ruleLines: Res<List<{ history: Set<TripId>, trips: List<Trip> }>> = useMemo(() => {
-    let res = List<{ history: Set<TripId>, trips: List<Trip> }>();
-
-    for (const line of textF.split('\n').map(s => s.trim()).filter(x => x)) {
-      const [historyStr, futureStr] = line.split('->').map(s => s.trim());
-      if (futureStr === undefined) return { type: 'err', err: 'Format: $HISTORY -> $FUTURE' };
-      const history = Set(historyStr.split(',').map(s => s.trim()).filter(x => x)) as Set<TripId>;
-      let trips = List<Trip>();
-      // console.log({ line, futureStr });
-      for (const tripS of futureStr.split(';').map(s => s.trim()).filter(x => x)) {
-        // console.log('   ', tripS);
-        const match = /^(.*), *(-?[0-9]+) *, *(-?[0-9]+) *$/.exec(tripS);
-        if (!match) return { type: 'err', err: 'Format: $NICK,$DEPART,ARRIVE; $NICK,$DEPART,ARRIVE; ...' };
-        const [_, nick, departS, arriveS] = match.map(s => s.trim());
-        if (arriveS === undefined) return { type: 'err', err: 'Format: $NICK,$DEPART,$ARRIVE; $NICK,$DEPART,$ARRIVE; ...' };
-        const [depart, arrive] = [departS, arriveS].map(s => parseInt(s)) as [CalTime, CalTime];
-        trips = trips.push(TripR({ nick: nick as TripId, depart, arrive }));
-      };
-      res = res.push({ history, trips });
+  let ruleLines: List<{ history: Set<TripId>, trips: List<Trip> }> = List();
+  for (const line of s.split('\n').map(s => s.trim()).filter(x => x)) {
+    const [historyStr, futureStr] = line.split('->').map(s => s.trim());
+    if (futureStr === undefined) return { type: 'err', err: 'Format: $HISTORY -> $FUTURE' };
+    const history = Set(historyStr.split(',').map(s => s.trim()).filter(x => x)) as Set<TripId>;
+    let trips = List<Trip>();
+    // console.log({ line, futureStr });
+    for (const tripS of futureStr.split(';').map(s => s.trim()).filter(x => x)) {
+      // console.log('   ', tripS);
+      const match = /^(.*), *(-?[0-9]+) *, *(-?[0-9]+) *$/.exec(tripS);
+      if (!match) return { type: 'err', err: 'Format: $NICK,$DEPART,ARRIVE; $NICK,$DEPART,ARRIVE; ...' };
+      const [_, nick, departS, arriveS] = match.map(s => s.trim());
+      if (arriveS === undefined) return { type: 'err', err: 'Format: $NICK,$DEPART,$ARRIVE; $NICK,$DEPART,$ARRIVE; ...' };
+      const [depart, arrive] = [departS, arriveS].map(s => parseInt(s)) as [CalTime, CalTime];
+      trips = trips.push(TripR({ nick: nick as TripId, depart, arrive }));
     };
-    // console.log('got', res.toJS());
-    return { type: 'ok', val: res };
-  }, [textF]);
-  // useEffect(() => console.log('ruleLines', ruleLines.type === 'ok' ? ruleLines.val.toJS() : ''), [ruleLines]);
+    ruleLines = ruleLines.push({ history, trips });
+  };
 
-  const tripsById: Res<Map<TripId, Trip>> = useMemo(() => {
-    if (ruleLines.type === 'err') return ruleLines;
-    let res = Map<TripId, Trip>();
-    for (const { trips } of ruleLines.val) {
-      for (const trip of trips) {
-        if (res.has(trip.nick)) return { type: 'err', err: `Duplicate nickname: ${trip.nick}` };
-        res = res.set(trip.nick, trip);
-      }
+  let tripsById: Map<TripId, Trip> = Map();
+  for (const { trips } of ruleLines) {
+    for (const trip of trips) {
+      if (tripsById.has(trip.nick)) return { type: 'err', err: `Duplicate nickname: ${trip.nick}` };
+      tripsById = tripsById.set(trip.nick, trip);
     }
-    return { type: 'ok', val: res };
-  }, [ruleLines]);
-
-  const rules: Res<Map<History, List<Trip>>> = useMemo(() => {
-    if (ruleLines.type === 'err') return ruleLines;
-    if (tripsById.type === 'err') return tripsById;
-    let res = Map<History, List<Trip>>();
-    for (const { history, trips } of ruleLines.val) {
-      if (res.has(history)) return { type: 'err', err: `Duplicate history: ${history.sort().join(', ')}` };
-      res = res.set(history, trips);
-    }
-    return { type: 'ok', val: res };
-  }, [ruleLines, tripsById]);
-  // useEffect(() => console.log('rules', rules.type === 'ok' ? rules.val.toJS() : ''), [rules]);
-
-  const canSubmit = tripsById.type === 'ok' && rules.type === 'ok';
-  const submit = () => {
-    if (!canSubmit) return;
-    onChange({ rules: rules.val, tripsById: tripsById.val });
   }
 
+  let rules: Map<History, List<Trip>> = Map();
+  for (const { history, trips } of ruleLines) {
+    if (rules.has(history)) return { type: 'err', err: `Duplicate history: ${history.sort().join(', ')}` };
+    rules = rules.set(history, trips);
+  }
+
+  return { type: 'ok', val: { rules, tripsById } };
+}
+
+function RulesetEditor({ init, onChange }: { init?: Ruleset, onChange: (ruleset: Ruleset) => void }) {
+  const [textF, setTextF] = useState(() => !init ? '' : init.rules
+    .entrySeq()
+    .map(([history, trips]) => `${history.join(', ')} -> ${trips.map(t => `${t.nick},${t.depart},${t.arrive}`).join('; ')}`)
+    .join('\n')
+  );
+
+  const ruleset: Res<Ruleset> = useMemo(() => parseRuleset(textF), [textF]);
+
+  const canSubmit = ruleset.type === 'ok';
+  const submit = () => {
+    if (!canSubmit) return;
+    onChange(ruleset.val);
+  }
 
   return <form onSubmit={e => { e.preventDefault(); submit() }}>
     <textarea rows={10} style={{ minWidth: '20em' }} value={textF} onChange={e => setTextF(e.target.value)}
       onKeyDown={e => { if (e.key === 'Enter' && e.metaKey) submit(); }}
     />
     <button type="submit" disabled={!canSubmit}>Update</button>
-    {(() => {
-      if (ruleLines.type === 'err') return <div style={{ color: 'red' }}>{ruleLines.err}</div>;
-      if (tripsById.type === 'err') return <div style={{ color: 'red' }}>{tripsById.err}</div>;
-      if (rules.type === 'err') return <div style={{ color: 'red' }}>{rules.err}</div>;
-    })()}
+    {ruleset.type === 'err' && <div style={{ color: 'red' }}>{ruleset.err}</div>}
   </form>
 }
 
@@ -128,10 +120,14 @@ function simulate(startWS: WorldState, startT: RealTime, nSteps: number, rules: 
 const COLORS = ['red', 'green', 'blue', 'purple', 'orange', 'magenta', 'cyan', 'brown', 'black', 'gray'];
 
 function App() {
-  const [{ rules, tripsById }, setRules] = useState<{ rules: Map<History, List<Trip>>, tripsById: Map<string, Trip> }>({ rules: Map(), tripsById: Map() });
-  // useEffect(() => console.log('rules', rules.toJS()), [rules]);
+  const [{ rules, tripsById }, setRules] = useState<{ rules: Map<History, List<Trip>>, tripsById: Map<string, Trip> }>((parseRuleset(`
+    -> a, 1, 3
+    a -> b, 5, -2
+    a, b -> c, 8, 20; d, 10, -4
+  `) as Res<Ruleset> & { type: 'ok' }).val);
+  const [hoveredCellInfo, setHoveredCellInfo] = useState<{ r: RealTime, h: Hypertime } | null>(null);
 
-  const { worldStates, departureInfos } = useMemo(
+  const { worldStates, arrivalInfos, departureInfos } = useMemo(
     () => simulate(Map(), 0 as RealTime, 100, rules),
     [rules]
   );
@@ -144,7 +140,7 @@ function App() {
   return (
     <>
       <div>
-        <RulesetEditor onChange={(ruleset: Ruleset) => {
+        <RulesetEditor init={{ rules, tripsById }} onChange={(ruleset: Ruleset) => {
           setRules(ruleset);
         }} />
         {/* <ul>
@@ -166,40 +162,31 @@ function App() {
         </ul> */}
       </div>
 
-      <div style={{ display: 'table' }}>
-        <table style={{ width: '100%', tableLayout: 'fixed', borderCollapse: 'collapse' }}>
-          <thead>
-            <tr>
-              <th></th>
-              {range(minRT, maxRT).map(r => <th key={r}>{r}</th>)}
-            </tr>
-          </thead>
-          <tbody>
-            {range(minHT, maxHT).map(h => <tr key={h}>
-              <td>{h}</td>
-              {range(minRT, maxRT).map(r => <td key={r}
-                style={{
-                  boxSizing: 'border-box',
-                  width: '2em',
-                  height: '2em',
-                  border: '1px solid black',
-                  textAlign: 'center',
-                  padding: '0',
-                }}
-              >
-                {/* {rh2ct({ r, h })} */}
-                {worldStates.get(r)?.get(h)?.sort().map(t => <span key={t} style={{ color: tripColors.get(t) }}> {t} </span>)}
-                {departureInfos.get(r)?.get(h)?.sort().map(t => <span key={t} style={{ color: tripColors.get(t) }}> ⦿ </span>)}
-              </td>)}
-            </tr>)}
-          </tbody>
-        </table>
+      <div className="grid-container">
+        <div className='grid'>
+          <div className='grid-row'>
+            {range(minRT, maxRT).map(r => <div key={r} className='grid-item'>{r}</div>)}
+          </div>
+          {range(minHT, maxHT).map(h => <div key={h} className='grid-row'>
+            <div className='grid-item'>{h}</div>
+            {range(minRT, maxRT).map(r => <div key={r} className='grid-item'
+              onMouseEnter={() => setHoveredCellInfo({ r, h })}
+              onMouseLeave={() => { if (hoveredCellInfo?.r === r && hoveredCellInfo?.h === h) setHoveredCellInfo(null) }}
+            >
+              {/* {worldStates.get(r)?.get(h)?.sort().map(t => <span key={t} style={{ color: tripColors.get(t) }}>{t}</span>)} */}
+              {arrivalInfos.get(r)?.get(h)?.sort().map(t => <span key={t} style={{ color: tripColors.get(t) }}> ⦿ </span>)}
+              {departureInfos.get(r)?.get(h)?.sort().map(t => <span key={t} style={{ color: tripColors.get(t) }}> x </span>)}
+            </div>)}
+          </div>)}
+        </div>
       </div>
 
-      <div className="card">
-        <div>Trips: {JSON.stringify(tripsById.toJS())}</div>
-        <div>Rules: {JSON.stringify(rules.toJS())}</div>
-      </div>
+      {hoveredCellInfo && <div className='hovered-cell-info'>
+        <div>RealTime: {hoveredCellInfo.r}</div>
+        <div>Hypertime: {hoveredCellInfo.h}</div>
+        <div>History: {worldStates.get(hoveredCellInfo.r)?.get(hoveredCellInfo.h)?.sort().map(t => <span key={t} style={{ color: tripColors.get(t) }}>{t}</span>)}</div>
+        <div>Departures: {departureInfos.get(hoveredCellInfo.r)?.get(hoveredCellInfo.h)?.sort().map(t => <span key={t} style={{ color: tripColors.get(t) }}>{t}</span>)}</div>
+      </div>}
     </>
   )
 }
