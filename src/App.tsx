@@ -17,7 +17,7 @@ type History = Set<TripId>;
 
 type Ruleset = {
   rules: Map<History, List<Trip>>;
-  tripsById: Map<string, Trip>;
+  tripsById: Map<TripId, Trip>;
 };
 type Res<T> = { type: 'ok', val: T } | { type: 'err', err: string };
 
@@ -120,7 +120,7 @@ function simulate(startWS: WorldState, startT: RealTime, nSteps: number, rules: 
 const COLORS = ['red', 'green', 'blue', 'purple', 'orange', 'magenta', 'cyan', 'brown', 'black', 'gray'];
 
 function App() {
-  const [{ rules, tripsById }, setRules] = useState<{ rules: Map<History, List<Trip>>, tripsById: Map<string, Trip> }>((parseRuleset(`
+  const [{ rules, tripsById }, setRules] = useState<{ rules: Map<History, List<Trip>>, tripsById: Map<TripId, Trip> }>((parseRuleset(`
     -> a, 1, 3
     a -> b, 5, -2
     a, b -> c, 8, 20; d, 10, -4
@@ -137,29 +137,25 @@ function App() {
   const minHT = useMemo(() => worldStates.valueSeq().flatMap(h => h.keySeq()).min()!, [worldStates]);
   const maxHT = useMemo(() => worldStates.valueSeq().flatMap(h => h.keySeq()).max()!, [worldStates]);
 
+  const arrivalMarker = (t: TripId) => <span style={{ color: tripColors.get(t) }}> ⦿ </span>;
+  const departureMarker = (t: TripId) => <span style={{ color: tripColors.get(t) }}> x </span>;
+
   return (
     <>
       <div>
         <RulesetEditor init={{ rules, tripsById }} onChange={(ruleset: Ruleset) => {
           setRules(ruleset);
         }} />
-        {/* <ul>
-          {rules.entrySeq().map(([history, futureTrips]) => (<li key={JSON.stringify([history, futureTrips])}>
-            <RuleCreator init={{ history, futureTrips }} tripsByNick={tripsByNick} onCreate={({ history, then }) => {
-              setTripsByNick(nicks => nicks.deleteAll(futureTrips.map(t => t.nick)).merge(then.map(t => [t.nick, t])));
-              setRules(rules.set(history, then));
-            }} />
-            <button onClick={() => setRules(rules.delete(history))}>Delete</button>
-          </li>))}
-          <li>
-            <RuleCreator key={JSON.stringify(rules.toJS())}
-              tripsByNick={tripsByNick}
-              onCreate={({ history, then }) => {
-                setTripsByNick(nicks => nicks.merge(then.map(t => [t.nick, t])));
-                setRules(rules.set(history, then));
-              }} />
-          </li>
-        </ul> */}
+      </div>
+
+      <div>
+        Legend:
+        <ul>
+          {tripsById.keySeq().sort().map((t) => <>
+            <li key={`${t}-depart`}> {departureMarker(t)} : {t} leaves </li>
+            <li key={`${t}-arrive`}> {(arrivalMarker(t))} : {t} arrives </li>
+          </>)}
+        </ul>
       </div>
 
       <div className="grid-container">
@@ -173,9 +169,8 @@ function App() {
               onMouseEnter={() => setHoveredCellInfo({ r, h })}
               onMouseLeave={() => { if (hoveredCellInfo?.r === r && hoveredCellInfo?.h === h) setHoveredCellInfo(null) }}
             >
-              {/* {worldStates.get(r)?.get(h)?.sort().map(t => <span key={t} style={{ color: tripColors.get(t) }}>{t}</span>)} */}
-              {arrivalInfos.get(r)?.get(h)?.sort().map(t => <span key={t} style={{ color: tripColors.get(t) }}> ⦿ </span>)}
-              {departureInfos.get(r)?.get(h)?.sort().map(t => <span key={t} style={{ color: tripColors.get(t) }}> x </span>)}
+              {arrivalInfos.get(r)?.get(h)?.sort().map(t => <span key={t}>{departureMarker(t)}</span>)}
+              {departureInfos.get(r)?.get(h)?.sort().map(t => <span key={t}>{arrivalMarker(t)}</span>)}
             </div>)}
           </div>)}
         </div>
