@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { List, Map, Record, Set } from 'immutable';
 
 type CalTime = number & { __type: 'CalTime' };
 type Hypertime = number & { __type: 'Hypertime' };
 type RealTime = number & { __type: 'RealTime' };
 const hc2rt = ({ h, c }: { h: Hypertime, c: CalTime }) => { return h + c as RealTime };
-const rh2ct = ({ r, h }: { r: RealTime, h: Hypertime }) => r - h as CalTime;
+// const rh2ct = ({ r, h }: { r: RealTime, h: Hypertime }) => r - h as CalTime;
 const rc2ht = ({ r, c }: { r: RealTime, c: CalTime }) => r - c as Hypertime;
 
 type TripId = string & { __type: 'TripId' };
@@ -131,7 +131,7 @@ function App() {
   const [{ rules, tripsById }, setRules] = useState<{ rules: Map<History, List<Trip>>, tripsById: Map<string, Trip> }>({ rules: Map(), tripsById: Map() });
   // useEffect(() => console.log('rules', rules.toJS()), [rules]);
 
-  const { worldStates, arrivalInfos, departureInfos } = useMemo(
+  const { worldStates, departureInfos } = useMemo(
     () => simulate(Map(), 0 as RealTime, 100, rules),
     [rules]
   );
