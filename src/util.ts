@@ -20,36 +20,14 @@ export type History = Set<TripId>;
 export const EventR = TotalRecord({
   tripId: undefined as any as TripId,
   r0: undefined as any as RealTime,
-  rf: undefined as any as RealTime,
   departH0: undefined as any as Hypertime,
   arriveH0: undefined as any as Hypertime,
 });
 export type Event = ReturnType<typeof EventR>;
 
 export function normalizeEvents(events: List<Event>): List<Event> {
-
-  let res = List<Event>();
-  for (const e of events.sortBy(e => e.r0)) {
-    if (e.rf <= e.r0) throw new Error('rf <= r0: ' + JSON.stringify(e));
-    const iMatchup = res.findIndex(r =>
-      r.tripId === e.tripId
-      && r.rf === e.r0
-      && e.departH0 === r.departH0 + (r.rf - r.r0));
-    if (iMatchup === -1) {
-      res = res.push(e);
-    } else {
-      const prev = res.get(iMatchup)!;
-      res = res.set(iMatchup, EventR({
-        tripId: e.tripId,
-        r0: prev.r0,
-        rf: e.rf,
-        departH0: prev.departH0,
-        arriveH0: prev.arriveH0,
-      }));
-    }
-  }
-
-  return res;
+  // TODO
+  return events.sortBy(e => e.r0);
 }
 
 export const ChunkR = TotalRecord({
@@ -105,7 +83,7 @@ export function normalizeGodView(gv: GodView): GodView {
 
   let pastEvents = normalizeEvents(gv.pastEvents);
   for (const e of pastEvents) {
-    if (e.rf > now) throw new Error('supposedly-past event is actually in future: ' + JSON.stringify(e));
+    if (e.r0 >= now) throw new Error('supposedly-past event is actually in future: ' + JSON.stringify(e));
   }
 
   // let immediateEvents = normalizeEvents(gv.immediateEvents);
@@ -134,6 +112,7 @@ export function normalizeGodView(gv: GodView): GodView {
 }
 
 export function timeUntilChunkEnd(chunks: List<Chunk>, h0: Hypertime): number {
+  if (h0 < 0) return Math.abs(h0);
   const chunk = chunks.find(c => c.start <= h0 && h0 < c.end);
   if (!chunk) throw new Error('no chunk contains ' + h0);
   return chunk.end - h0;
@@ -145,13 +124,13 @@ export function getNonPastEvents(gv: GodView): List<Event> {
       const r0 = hc2rt({ h: chunk.start, c: trip.depart });
       const arriveH0 = rc2ht({ r: r0, c: trip.arrive });
       if (r0 < gv.now) continue;
-      res.push(EventR({ tripId: trip.nick, r0, rf: r0 + (chunk.end - chunk.start) as RealTime, departH0: chunk.start, arriveH0 }));
+      res.push(EventR({ tripId: trip.nick, r0, departH0: chunk.start, arriveH0 }));
       if (r0 === gv.now) {
         for (const nextTrip of gv.rules.get(chunk.history) ?? []) {
           const r0 = hc2rt({ h: arriveH0, c: nextTrip.depart });
           const nextArriveH0 = rc2ht({ r: r0, c: nextTrip.arrive });
           if (r0 <= gv.now) continue;
-          res.push(EventR({ tripId: nextTrip.nick, r0, rf: r0 + (chunk.end - chunk.start) as RealTime, departH0: chunk.start, arriveH0: nextArriveH0 }));
+          res.push(EventR({ tripId: nextTrip.nick, r0, departH0: chunk.start, arriveH0: nextArriveH0 }));
         }
       }
     }
@@ -163,7 +142,6 @@ export function getNextInterestingTime(gv: GodView): RealTime {
   return Math.min(...events.flatMap(e => {
     if (e.r0 > gv.now) return [e.r0];
     return [
-      e.rf,
       gv.now + timeUntilChunkEnd(gv.chunks, e.departH0),
       gv.now + timeUntilChunkEnd(gv.chunks, e.arriveH0),
     ]
@@ -178,7 +156,6 @@ export function evolveChunks(chunks: List<Chunk>, events: List<Event>, dt: numbe
     const arrivals = events.filter(e => chunk.start <= e.arriveH0 && e.arriveH0 < chunk.end);
     let subchunks: Chunk[] = [chunk];
     for (const e of arrivals) {
-      if (e.rf < e.r0 + dt) throw new Error('event ends before dt: ' + JSON.stringify(e));
       subchunks = subchunks.flatMap(subchunk => {
         const overlap = iop.intersection([subchunk.start, subchunk.end], [e.arriveH0, e.arriveH0 + dt]);
         if (!overlap) return subchunk;
@@ -197,45 +174,17 @@ export function evolveChunks(chunks: List<Chunk>, events: List<Event>, dt: numbe
 export function stepGodView(gv: GodView): GodView {
   gv = normalizeGodView(gv);
 
-  const events = getNonPastEvents(gv);
-  const immediateEvents = events.filter(e => e.r0 === gv.now);
-  const immediateArrivals = immediateEvents.groupBy(e => e.arriveH0);
-  const immediateDepartures = immediateEvents.groupBy(e => e.departH0);
-
-  // If any arrivals are happening **right now,** landing at hypertimes that would otherwise have departures,
-  // then the departures won't actually happen. Push those departures forward to the next hypertimes
-  // they aren't shadowed.
-  const immediatelyPushedDepartures = immediateDepartures.mapEntries(([departH0, events]) => {
-    if (!immediateArrivals.has(departH0)) {
-      return undefined;
-    }
-    const newR0 = immediateArrivals.get(departH0)!.maxBy(e => e.rf)!.rf;
-    const pushedBy = newR0 - gv.now;
-    const res = events.filter(e => e.rf > newR0).map(e => EventR({
-      tripId: e.tripId,
-      r0: newR0,
-      rf: e.rf,
-      departH0: e.departH0 + pushedBy as Hypertime,
-      arriveH0: e.arriveH0 + pushedBy as Hypertime,
-    }));
-    return res.isEmpty() ? undefined : [departH0, res];
-  });
-  if (!immediatelyPushedDepartures.isEmpty()) {
-    return GodViewR({
-      rules: gv.rules,
-      now: gv.now,
-      chunks: gv.chunks,
-      pastEvents: gv.pastEvents,
-    });
-  }
-
   const stepUntil = getNextInterestingTime(gv);
-
   const dt = stepUntil - gv.now;
+  const events = getNonPastEvents(gv);
+  const immEvents = events.filter(e => e.r0 === gv.now);
+  const immArrivalHypertimes = Set(immEvents.map(e => e.arriveH0));
+  const newChunks = evolveChunks(gv.chunks, immEvents.filter(e => !immArrivalHypertimes.has(e.departH0)), dt);
+
+
   const newNow = stepUntil;
-  const newChunks = evolveChunks(gv.chunks, immediateEvents, dt);
-  const newPastEvents = gv.pastEvents.concat(immediateEvents.map(e =>
-    EventR({ tripId: e.tripId, r0: e.r0, rf: stepUntil, departH0: e.departH0, arriveH0: e.arriveH0 })));
+  const newPastEvents = gv.pastEvents.concat(immEvents.map(e =>
+    EventR({ tripId: e.tripId, r0: e.r0, departH0: e.departH0, arriveH0: e.arriveH0 })));
 
   return normalizeGodView(GodViewR({
     rules: gv.rules,

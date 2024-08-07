@@ -114,27 +114,31 @@ function GodViewE({ gv }: { gv: GodView }) {
     <ul>
       <li>Now: {gv.now}</li>
       <li>Chunks: {gv.chunks.sortBy(c => c.start).map((c, i) => <span key={i}>({c.start}-{c.end}: {c.history})</span>)}</li>
-      <li>Events: {gv.pastEvents.sortBy(e => e.r0).map((e, i) => <span key={i}>({e.r0}-{e.rf}: {e.tripId} h={e.departH0}{'->'}{e.arriveH0})</span>)}</li>
+      <li>Events: {gv.pastEvents.sortBy(e => e.r0).map((e, i) => <span key={i}>({e.r0}: {e.tripId} h={e.departH0} to {e.arriveH0})</span>)}</li>
     </ul>
 
-    <div style={{ position: 'absolute' }}>
+    <div style={{ position: 'absolute', width: '10em', height: '10em' }}>
       {gv.chunks.map((chunk, i) => <div key={i} style={{
         position: 'absolute',
         left: 0,
         right: 0,
-        top: `${(chunk.start / 10) * 100}%`,
-        bottom: `${(1 - chunk.end / 10) * 100}%`,
+        top: `${chunk.start * 2}em`,
+        height: `${(chunk.end - chunk.start) * 2}em`,
         backgroundColor: 'rgba(0, 0, 0, 0.1)',
-      }}></div>)}
+        borderBottom: '1px solid black',
+      }}>
+        {chunk.start}-{chunk.end}:
+        {chunk.history.sort().toArray()}
+      </div>)}
+
     </div>
   </>
 }
 
 function App() {
   const [{ rules, tripsById }, setRules] = useState<{ rules: Map<History, List<Trip>>, tripsById: Map<TripId, Trip> }>((parseRuleset(`
-    -> a, 1, 3
-    a -> b, 5, -2
-    a, b -> c, 8, 20; d, 10, -4
+    -> a, 5, 3
+    
   `) as Res<Ruleset> & { type: 'ok' }).val);
   const [hoveredCellInfo, setHoveredCellInfo] = useState<{ r: RealTime, h: Hypertime } | null>(null);
 
@@ -151,14 +155,18 @@ function App() {
     }
     return res;
   }, [gv0]);
+  useEffect(() => console.log(gvSteps.toJS()), [gvSteps]);
 
   const [showStep, setShowStep] = useState(0);
+  useEffect(() => console.log(showStep), [showStep]);
   useEffect(() => {
-    window.addEventListener('keydown', e => {
+    const cb = (e: KeyboardEvent) => {
       if (e.key === 'ArrowRight') setShowStep(s => Math.min(s + 1, gvSteps.size - 1));
       if (e.key === 'ArrowLeft') setShowStep(s => Math.max(s - 1, 0));
-    });
-  })
+    };
+    window.addEventListener('keydown', cb);
+    return () => window.removeEventListener('keydown', cb);
+  }, [])
 
   const { worldStates, arrivalInfos, departureInfos } = useMemo(
     () => simulate(Map(), 0 as RealTime, 100, rules),
