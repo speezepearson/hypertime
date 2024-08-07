@@ -1,19 +1,9 @@
-import { useMemo, useState } from 'react';
-import { List, Map, Record, Set } from 'immutable';
+import { useEffect, useMemo, useState } from 'react';
+import { List, Map, Set } from 'immutable';
 
 import './App.css';
+import { CalTime, ChunkR, GodView, GodViewR, hc2rt, History, Hypertime, rc2ht, RealTime, stepGodView, Trip, TripId, TripR } from './util';
 
-type CalTime = number & { __type: 'CalTime' };
-type Hypertime = number & { __type: 'Hypertime' };
-type RealTime = number & { __type: 'RealTime' };
-const hc2rt = ({ h, c }: { h: Hypertime, c: CalTime }) => { return h + c as RealTime };
-// const rh2ct = ({ r, h }: { r: RealTime, h: Hypertime }) => r - h as CalTime;
-const rc2ht = ({ r, c }: { r: RealTime, c: CalTime }) => r - c as Hypertime;
-
-type TripId = string & { __type: 'TripId' };
-const TripR = Record({ nick: undefined as any as TripId, depart: undefined as any as CalTime, arrive: undefined as any as CalTime });
-type Trip = ReturnType<typeof TripR>;
-type History = Set<TripId>;
 
 type Ruleset = {
   rules: Map<History, List<Trip>>;
@@ -119,6 +109,27 @@ function simulate(startWS: WorldState, startT: RealTime, nSteps: number, rules: 
 // All these need to be readable against a white background.
 const COLORS = ['red', 'green', 'blue', 'purple', 'orange', 'magenta', 'cyan', 'brown', 'black', 'gray'];
 
+function GodViewE({ gv }: { gv: GodView }) {
+  return <>
+    <ul>
+      <li>Now: {gv.now}</li>
+      <li>Chunks: {gv.chunks.sortBy(c => c.start).map((c, i) => <span key={i}>({c.start}-{c.end}: {c.history})</span>)}</li>
+      <li>Events: {gv.pastEvents.sortBy(e => e.r0).map((e, i) => <span key={i}>({e.r0}-{e.rf}: {e.tripId} h={e.departH0}{'->'}{e.arriveH0})</span>)}</li>
+    </ul>
+
+    <div style={{ position: 'absolute' }}>
+      {gv.chunks.map((chunk, i) => <div key={i} style={{
+        position: 'absolute',
+        left: 0,
+        right: 0,
+        top: `${(chunk.start / 10) * 100}%`,
+        bottom: `${(1 - chunk.end / 10) * 100}%`,
+        backgroundColor: 'rgba(0, 0, 0, 0.1)',
+      }}></div>)}
+    </div>
+  </>
+}
+
 function App() {
   const [{ rules, tripsById }, setRules] = useState<{ rules: Map<History, List<Trip>>, tripsById: Map<TripId, Trip> }>((parseRuleset(`
     -> a, 1, 3
@@ -127,18 +138,33 @@ function App() {
   `) as Res<Ruleset> & { type: 'ok' }).val);
   const [hoveredCellInfo, setHoveredCellInfo] = useState<{ r: RealTime, h: Hypertime } | null>(null);
 
+  const gv0: GodView = useMemo(() => GodViewR({
+    now: 0 as RealTime,
+    chunks: List([ChunkR({ start: -Infinity as Hypertime, end: Infinity as Hypertime, history: Set() })]),
+    pastEvents: List(),
+    rules,
+  }), [rules]);
+  const gvSteps: List<GodView> = useMemo(() => {
+    let res = List([gv0]);
+    for (let i = 0; i < 20; i++) {
+      res = res.push(stepGodView(res.last()!));
+    }
+    return res;
+  }, [gv0]);
+
+  const [showStep, setShowStep] = useState(0);
+  useEffect(() => {
+    window.addEventListener('keydown', e => {
+      if (e.key === 'ArrowRight') setShowStep(s => Math.min(s + 1, gvSteps.size - 1));
+      if (e.key === 'ArrowLeft') setShowStep(s => Math.max(s - 1, 0));
+    });
+  })
+
   const { worldStates, arrivalInfos, departureInfos } = useMemo(
     () => simulate(Map(), 0 as RealTime, 100, rules),
     [rules]
   );
   const tripColors = useMemo(() => Map(tripsById.keySeq().sort().map((nick, i) => [nick, COLORS[i % COLORS.length]])), [tripsById]);
-  const minRT = useMemo(() => worldStates.keySeq().min()!, [worldStates]);
-  const maxRT = useMemo(() => worldStates.keySeq().max()!, [worldStates]);
-  const minHT = useMemo(() => worldStates.valueSeq().flatMap(h => h.keySeq()).min()!, [worldStates]);
-  const maxHT = useMemo(() => worldStates.valueSeq().flatMap(h => h.keySeq()).max()!, [worldStates]);
-
-  const arrivalMarker = (t: TripId) => <span style={{ color: tripColors.get(t) }}> ⦿ </span>;
-  const departureMarker = (t: TripId) => <span style={{ color: tripColors.get(t) }}> x </span>;
 
   return (
     <>
@@ -148,33 +174,7 @@ function App() {
         }} />
       </div>
 
-      <div>
-        Legend:
-        <ul>
-          {tripsById.keySeq().sort().map((t) => <>
-            <li key={`${t}-depart`}> {departureMarker(t)} : {t} leaves </li>
-            <li key={`${t}-arrive`}> {(arrivalMarker(t))} : {t} arrives </li>
-          </>)}
-        </ul>
-      </div>
-
-      <div className="grid-container">
-        <div className='grid'>
-          <div className='grid-row'>
-            {range(minRT, maxRT).map(r => <div key={r} className='grid-item'>{r}</div>)}
-          </div>
-          {range(minHT, maxHT).map(h => <div key={h} className='grid-row'>
-            <div className='grid-item'>{h}</div>
-            {range(minRT, maxRT).map(r => <div key={r} className='grid-item'
-              onMouseEnter={() => setHoveredCellInfo({ r, h })}
-              onMouseLeave={() => { if (hoveredCellInfo?.r === r && hoveredCellInfo?.h === h) setHoveredCellInfo(null) }}
-            >
-              {arrivalInfos.get(r)?.get(h)?.sort().map(t => <span key={t}>{departureMarker(t)}</span>)}
-              {departureInfos.get(r)?.get(h)?.sort().map(t => <span key={t}>{arrivalMarker(t)}</span>)}
-            </div>)}
-          </div>)}
-        </div>
-      </div>
+      <GodViewE gv={gvSteps.get(showStep)!} />
 
       {hoveredCellInfo && <div className='hovered-cell-info'>
         <div>RealTime: {hoveredCellInfo.r}</div>
@@ -185,7 +185,5 @@ function App() {
     </>
   )
 }
-
-const range = <T extends number>(lo: T, hi: T): T[] => Array.from({ length: hi + 1 - lo }, (_, i) => lo + i as T);
 
 export default App
