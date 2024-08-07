@@ -62,8 +62,8 @@ export function normalizeChunks(chunks: List<Chunk>): List<Chunk> {
   chunks = chunks.sortBy(s => s.start);
   if (chunks.size === 0) throw new Error('no chunks');
 
-  if (chunks.first()!.start !== -Infinity) {
-    throw new Error('chunks do not start at -Infinity: first is ' + JSON.stringify(chunks.first()));
+  if (chunks.first()!.start !== 0) {
+    throw new Error('chunks do not start at 0: first is ' + JSON.stringify(chunks.first()));
   }
   if (chunks.last()!.end !== Infinity) {
     throw new Error('chunks do not end at Infinity: last is ' + JSON.stringify(chunks.last()));

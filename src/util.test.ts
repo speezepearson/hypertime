@@ -60,37 +60,37 @@ describe('normalizeChunks', () => {
   });
   test('noop on single chunk', () => {
     expect(normalizeChunks(
-      List([mkChunk({ start: -Infinity, end: Infinity, history: ['a', 'b'] })]),
+      List([mkChunk({ start: 0, end: Infinity, history: ['a', 'b'] })]),
     )).toStrictEqual(
-      List([mkChunk({ start: -Infinity, end: Infinity, history: ['a', 'b'] })]),
+      List([mkChunk({ start: 0, end: Infinity, history: ['a', 'b'] })]),
     );
   });
   test('combines adjacent chunks with same history', () => {
     expect(normalizeChunks(
-      List([mkChunk({ start: -Infinity, end: 5, history: ['a'] }), mkChunk({ start: 5, end: Infinity, history: ['a'] })]),
+      List([mkChunk({ start: 0, end: 5, history: ['a'] }), mkChunk({ start: 5, end: Infinity, history: ['a'] })]),
     )).toStrictEqual(
-      List([mkChunk({ start: -Infinity, end: Infinity, history: ['a'] })]),
+      List([mkChunk({ start: 0, end: Infinity, history: ['a'] })]),
     );
   });
   test('does not combine adjacent chunks with different histories', () => {
     expect(normalizeChunks(
-      List([mkChunk({ start: -Infinity, end: 5, history: ['a'] }), mkChunk({ start: 5, end: Infinity, history: ['b'] })]),
+      List([mkChunk({ start: 0, end: 5, history: ['a'] }), mkChunk({ start: 5, end: Infinity, history: ['b'] })]),
     )).toStrictEqual(
-      List([mkChunk({ start: -Infinity, end: 5, history: ['a'] }), mkChunk({ start: 5, end: Infinity, history: ['b'] })]),
+      List([mkChunk({ start: 0, end: 5, history: ['a'] }), mkChunk({ start: 5, end: Infinity, history: ['b'] })]),
     );
   });
   test('combines many out-of-order chunks', () => {
     expect(normalizeChunks(
-      List([mkChunk({ start: -Infinity, end: 5, history: [] }), mkChunk({ start: 20, end: Infinity, history: [] }), mkChunk({ start: 5, end: 20, history: [] })]),
+      List([mkChunk({ start: 0, end: 5, history: [] }), mkChunk({ start: 20, end: Infinity, history: [] }), mkChunk({ start: 5, end: 20, history: [] })]),
     )).toStrictEqual(
-      List([mkChunk({ start: -Infinity, end: Infinity, history: [] })]),
+      List([mkChunk({ start: 0, end: Infinity, history: [] })]),
     );
   });
   test('sorts chunks', () => {
     expect(normalizeChunks(
-      List([mkChunk({ start: -Infinity, end: 5, history: ['a'] }), mkChunk({ start: 20, end: Infinity, history: ['c'] }), mkChunk({ start: 5, end: 20, history: ['b'] })]),
+      List([mkChunk({ start: 0, end: 5, history: ['a'] }), mkChunk({ start: 20, end: Infinity, history: ['c'] }), mkChunk({ start: 5, end: 20, history: ['b'] })]),
     )).toStrictEqual(
-      List([mkChunk({ start: -Infinity, end: 5, history: ['a'] }), mkChunk({ start: 5, end: 20, history: ['b'] }), mkChunk({ start: 20, end: Infinity, history: ['c'] })]),
+      List([mkChunk({ start: 0, end: 5, history: ['a'] }), mkChunk({ start: 5, end: 20, history: ['b'] }), mkChunk({ start: 20, end: Infinity, history: ['c'] })]),
     );
   });
 });
@@ -98,16 +98,30 @@ describe('normalizeChunks', () => {
 describe('getNonPastEvents', () => {
   test('no events for empty universe', () => {
     expect(getNonPastEvents(mkGodView(
-      { rules: [], now: 0, pastEvents: [], chunks: [{ start: -Infinity, end: Infinity, history: [] }] },
+      { rules: [], now: 0, pastEvents: [], chunks: [{ start: 0, end: Infinity, history: [] }] },
     ))).toStrictEqual(
       List(),
     );
   });
+  test('includes a simple immediate event', () => {
+    expect(getNonPastEvents(mkGodView(
+      { rules: [[[], [{ nick: 'a', depart: 3, arrive: 1 }]]], now: 0, pastEvents: [], chunks: [{ start: 0, end: Infinity, history: [] }] },
+    ))).toStrictEqual(
+      List([mkEvent({ tripId: 'a', r0: 3, rf: Infinity, departH0: 0, arriveH0: 2 })]),
+    );
+  });
+  test('includes a simple future event', () => {
+    expect(getNonPastEvents(mkGodView(
+      { rules: [[[], [{ nick: 'a', depart: 3, arrive: 5 }]]], now: 0, pastEvents: [], chunks: [{ start: 0, end: Infinity, history: [] }] },
+    ))).toStrictEqual(
+      List([mkEvent({ tripId: 'a', r0: 3, rf: Infinity, departH0: 0, arriveH0: -2 })]),
+    );
+  });
   test('ignores past events', () => {
     expect(getNonPastEvents(mkGodView(
-      { rules: [], now: 0, pastEvents: [], chunks: [{ start: -Infinity, end: Infinity, history: [] }] },
+      { rules: [[[], [{ nick: 'a', depart: -1, arrive: 3 }]]], now: 0, pastEvents: [], chunks: [{ start: 0, end: Infinity, history: [] }] },
     ))).toStrictEqual(
       List(),
     );
-  })
+  });
 });

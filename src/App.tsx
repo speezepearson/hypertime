@@ -140,7 +140,7 @@ function App() {
 
   const gv0: GodView = useMemo(() => GodViewR({
     now: 0 as RealTime,
-    chunks: List([ChunkR({ start: -Infinity as Hypertime, end: Infinity as Hypertime, history: Set() })]),
+    chunks: List([ChunkR({ start: 0 as Hypertime, end: Infinity as Hypertime, history: Set() })]),
     pastEvents: List(),
     rules,
   }), [rules]);
