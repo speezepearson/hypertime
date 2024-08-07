@@ -11,7 +11,7 @@ const hc2rt = ({ h, c }: { h: Hypertime, c: CalTime }) => { return h + c as Real
 const rc2ht = ({ r, c }: { r: RealTime, c: CalTime }) => r - c as Hypertime;
 
 type TripId = string & { __type: 'TripId' };
-const TripR = Record({ nick: '<unset>' as TripId, depart: -1 as CalTime, arrive: -1 as CalTime });
+const TripR = Record({ nick: undefined as any as TripId, depart: undefined as any as CalTime, arrive: undefined as any as CalTime });
 type Trip = ReturnType<typeof TripR>;
 type History = Set<TripId>;
 
