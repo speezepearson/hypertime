@@ -163,7 +163,7 @@ function GodViewE({ gv, tripColors, onHover }: { gv: GodView, tripColors: Map<Tr
           width: `${(maxRT - box.start.r0) * pxPerDay}px`,
           top: `${box.start.arriveH0 * pxPerDay}px`,
           height: `${pxPerDay * dur}px`,
-          backgroundColor: 'rgba(0, 0, 0, 0.1)',
+          backgroundColor: `color-mix(in srgb, ${tripColors.get(box.start.tripId) ?? 'black'}, transparent 90%)`,
           borderLeft: `2px solid ${tripColors.get(box.start.tripId) ?? 'black'}`,
         }}>
           {/* {box.start.tripId}: r0 {box.start.r0} arr {box.start.arriveH0} dur {box.start.departH0 - box.start.arriveH0} */}
