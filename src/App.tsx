@@ -92,6 +92,9 @@ function GodViewE({ gv, tripColors, onHover }: { gv: GodView, tripColors: Map<Tr
     return () => refCurrent?.removeEventListener('mousemove', cb);
   }, []);
 
+  const maxRT = gv.past.map(b => b.rf).max() ?? 20;
+  const maxHT = gv.past.flatMap(b => [b.start.departH0 + (b.rf - b.start.r0), b.start.arriveH0 + (b.rf - b.start.r0)]).max() ?? 20;
+
   return <div>
     <details><summary>Debug info (t={gv.now}, next={getNextInterestingTime(gv)})</summary>
       <ul>
@@ -115,14 +118,14 @@ function GodViewE({ gv, tripColors, onHover }: { gv: GodView, tripColors: Map<Tr
         left: `${gv.now * pxPerDay}px`,
         top: 0,
         width: '1px',
-        height: '100%',
+        height: `${maxHT * pxPerDay}px`,
         borderLeft: '1px solid color-mix(in srgb, black, transparent 80%)',
       }}>now</div>
 
       {gv.chunks.map((chunk, i) => <div key={i} style={{
         position: 'absolute',
         left: 0,
-        right: 0,
+        width: `${maxRT * pxPerDay}px`,
         top: `${chunk.start * pxPerDay}px`,
         height: `${(chunk.end - chunk.start) * pxPerDay}px`,
         // backgroundColor: 'rgba(0, 0, 0, 0.1)',
@@ -157,7 +160,7 @@ function GodViewE({ gv, tripColors, onHover }: { gv: GodView, tripColors: Map<Tr
           transform: 'skew(45deg)',
           position: 'absolute',
           left: `${(box.start.r0 + dur / 2) * pxPerDay}px`,
-          width: '100%',
+          width: `${(maxRT - box.start.r0) * pxPerDay}px`,
           top: `${box.start.arriveH0 * pxPerDay}px`,
           height: `${pxPerDay * dur}px`,
           backgroundColor: 'rgba(0, 0, 0, 0.1)',
