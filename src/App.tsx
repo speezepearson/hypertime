@@ -209,8 +209,6 @@ function App() {
 
   return (
     <>
-      {showStep} / {gvSteps.size}
-      {/* <Playground /> */}
       <div>
         <RulesetEditor init={{ rules, tripsById }} onChange={(ruleset: Ruleset) => {
           setRules(ruleset);
