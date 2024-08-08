@@ -89,7 +89,7 @@ function GodViewE({ gv, tripColors, onHover }: { gv: GodView, tripColors: Map<Tr
     return () => refCurrent?.removeEventListener('mousemove', cb);
   }, []);
 
-  return <>
+  return <div onMouseLeave={() => onHover(null)}>
     <details><summary>Debug info (t={gv.now}, next={getNextInterestingTime(gv)})</summary>
       <ul>
         <li>Future events: <ul>{getNonPastEvents(gv).map((e, i) => <li key={i}>{e.tripId} at {e.r0}</li>)}</ul></li>
@@ -157,15 +157,15 @@ function GodViewE({ gv, tripColors, onHover }: { gv: GodView, tripColors: Map<Tr
         </div>
       })}
     </div>
-  </>
+  </div>
 }
 
 function App() {
   const [{ rules, tripsById }, setRules] = useState<{ rules: Map<History, List<Trip>>, tripsById: Map<TripId, Trip> }>((parseRuleset(`
-    -> a, 10, 2
-    a -> b, 15, 8
-    a, b -> c, 18, 30; d, 20, 6
-      `) as Res<Ruleset> & { type: 'ok' }).val);
+    -> a,10,2
+    a -> b,15,8
+    a, b -> c,18,30; d,20,9
+  `) as Res<Ruleset> & { type: 'ok' }).val);
   const [hoveredCellInfo, setHoveredCellInfo] = useState<{ r: RealTime, h: Hypertime } | null>(null);
 
   const [showStep, setShowStep] = useState(20);
@@ -222,6 +222,12 @@ function App() {
         </ul>
       </div>
 
+      <div>
+        <button onClick={bak}>←</button>
+        <div style={{ display: 'inline-block', textAlign: 'center', width: '5em' }}>t = {gvSteps.last()!.now}</div>
+        <button onClick={fwd}>→</button>
+        <span> (or arrow keys)</span>
+      </div>
       <GodViewE gv={gvSteps.last()!} tripColors={tripColors} onHover={setHoveredCellInfo} />
 
       {hoveredCellInfo && <div className='hovered-cell-info'>
