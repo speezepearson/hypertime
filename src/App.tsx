@@ -20,11 +20,11 @@ function parseRuleset(s: string): Res<Ruleset> {
     const history = Set(historyStr.split(',').map(s => s.trim()).filter(x => x)) as Set<TripId>;
     let trips = List<Trip>();
     for (const tripS of futureStr.split(';').map(s => s.trim()).filter(x => x)) {
-      const match = /^(.*), *(-?[0-9.]+) *, *(-?[0-9.]+) *$/.exec(tripS);
+      const match = /^(.*), *(-?[0-9]+) *, *(-?[0-9]+) *$/.exec(tripS);
       if (!match) return { type: 'err', err: 'Format: $ID,$DEPART,ARRIVE; $ID,$DEPART,ARRIVE; ...' };
       const [_, id, departS, arriveS] = match.map(s => s.trim());
       if (arriveS === undefined) return { type: 'err', err: 'Format: $ID,$DEPART,$ARRIVE; $ID,$DEPART,$ARRIVE; ...' };
-      const [depart, arrive] = [departS, arriveS].map(s => parseFloat(s)) as [CalTime, CalTime];
+      const [depart, arrive] = [departS, arriveS].map(s => parseInt(s)) as [CalTime, CalTime];
       trips = trips.push(TripR({ id: id as TripId, depart, arrive }));
     };
     ruleLines = ruleLines.push({ history, trips });
