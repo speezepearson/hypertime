@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { List, Map, Set } from 'immutable';
 
 import './App.css';
-import { CalTime, ChunkR, GodView, GodViewR, hc2rt, History, Hypertime, rc2ht, RealTime, stepGodView, Trip, TripId, TripR } from './util';
+import { CalTime, ChunkR, getNextInterestingTime, getNonPastEvents, GodView, GodViewR, hc2rt, History, Hypertime, rc2ht, RealTime, rh2ct, stepGodView, Trip, TripId, TripR } from './util';
 
 
 type Ruleset = {
@@ -19,9 +19,7 @@ function parseRuleset(s: string): Res<Ruleset> {
     if (futureStr === undefined) return { type: 'err', err: 'Format: $HISTORY -> $FUTURE' };
     const history = Set(historyStr.split(',').map(s => s.trim()).filter(x => x)) as Set<TripId>;
     let trips = List<Trip>();
-    // console.log({ line, futureStr });
     for (const tripS of futureStr.split(';').map(s => s.trim()).filter(x => x)) {
-      // console.log('   ', tripS);
       const match = /^(.*), *(-?[0-9]+) *, *(-?[0-9]+) *$/.exec(tripS);
       if (!match) return { type: 'err', err: 'Format: $NICK,$DEPART,ARRIVE; $NICK,$DEPART,ARRIVE; ...' };
       const [_, nick, departS, arriveS] = match.map(s => s.trim());
@@ -73,125 +71,185 @@ function RulesetEditor({ init, onChange }: { init?: Ruleset, onChange: (ruleset:
   </form>
 }
 
-type WorldState = Map<Hypertime, History>;
-
-function simulate(startWS: WorldState, startT: RealTime, nSteps: number, rules: Map<History, List<Trip>>): {
-  worldStates: Map<RealTime, WorldState>,
-  arrivalInfos: Map<RealTime, Map<Hypertime, Set<TripId>>>,
-  departureInfos: Map<RealTime, Map<Hypertime, Set<TripId>>>,
-} {
-  let worldStates: Map<RealTime, WorldState> = Map([[startT, startWS]]);
-  let arrivalInfos: Map<RealTime, Map<Hypertime, Set<TripId>>> = Map();
-  let departureInfos: Map<RealTime, Map<Hypertime, Set<TripId>>> = Map();
-  for (let r = startT + 1 as RealTime; r < startT + nSteps; r++) {
-    const last = worldStates.get(r - 1 as RealTime)!;
-    let next: WorldState = Map();
-    const htMin = last.keySeq().concat(arrivalInfos.get(r)?.keySeq() ?? []).min() ?? (0 as Hypertime);
-    const htMax = 1 + (last.keySeq().concat(arrivalInfos.get(r)?.keySeq() ?? []).max() ?? (0 as Hypertime));
-    for (let h = htMin; h <= htMax; h++) {
-      const oldHistory: History = last.get(h, Set());
-      next = next.set(h, oldHistory.union(arrivalInfos.get(r)?.get(h) ?? []));
-      if (h === 24 && (r == 17)) { debugger }
-      const departures = (rules.get(oldHistory) ?? List()).filter(t => r === hc2rt({ h, c: t.depart }));
-      for (const t of departures) {
-        const toHT = rc2ht({ r, c: t.arrive });
-        // console.log('departure', t.nick, 'from h', h, 'c', t.depart, 'to h', toHT);
-        departureInfos = departureInfos.update(r, Map(), m => m.update(h, Set(), s => s.add(t.nick)));
-        arrivalInfos = arrivalInfos.update(r + 1 as RealTime, Map(), m => m.update(toHT, Set(), s => s.add(t.nick)));
-      }
-      // console.log(JSON.stringify([last.get(h), next.get(h)]))
-    }
-    worldStates = worldStates.set(r, next);
-  }
-  return { worldStates, arrivalInfos, departureInfos };
-}
-
 // All these need to be readable against a white background.
 const COLORS = ['red', 'green', 'blue', 'purple', 'orange', 'magenta', 'cyan', 'brown', 'black', 'gray'];
 
-function GodViewE({ gv }: { gv: GodView }) {
-  return <>
-    <ul>
-      <li>Now: {gv.now}</li>
-      <li>Chunks: {gv.chunks.sortBy(c => c.start).map((c, i) => <span key={i}>({c.start}-{c.end}: {c.history})</span>)}</li>
-      <li>Events: {gv.pastEvents.sortBy(e => e.r0).map((e, i) => <span key={i}>({e.r0}: {e.tripId} h={e.departH0} to {e.arriveH0})</span>)}</li>
-    </ul>
+const PX_PER_DAY = 20;
+function GodViewE({ gv, tripColors, onHover }: { gv: GodView, tripColors: Map<TripId, string>, onHover: (info: { r: RealTime, h: Hypertime } | null) => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const cb = (e: MouseEvent) => {
+      const rect = ref.current!.getBoundingClientRect();
+      const r = (e.clientX - rect.left) / PX_PER_DAY as RealTime;
+      const h = (e.clientY - rect.top) / PX_PER_DAY as Hypertime;
+      onHover({ r, h });
+    };
+    const refCurrent = ref.current;
+    refCurrent?.addEventListener('mousemove', cb);
+    return () => refCurrent?.removeEventListener('mousemove', cb);
+  }, []);
 
-    <div style={{ position: 'absolute', width: '10em', height: '10em' }}>
+  return <>
+    <details><summary>Debug info (t={gv.now}, next={getNextInterestingTime(gv)})</summary>
+      <ul>
+        <li>Future events: <ul>{getNonPastEvents(gv).map((e, i) => <li key={i}>{e.tripId} at {e.r0}</li>)}</ul></li>
+        <li>Chunks: {gv.chunks.sortBy(c => c.start).map((c, i) => <span key={i}>({c.start}-{c.end}: {c.history})</span>)}</li>
+        <li>Events: {gv.past.sortBy(b => b.start.r0).map((b, i) => <span key={i}>({b.start.r0}-{b.rf}: {b.start.tripId} h={b.start.departH0} to {b.start.arriveH0})</span>)}</li>
+      </ul>
+    </details>
+
+    <div style={{ position: 'absolute', width: '100%', height: '100%', overflow: 'scroll' }} ref={ref}>
+
+      <div style={{
+        position: 'absolute',
+        left: `${gv.now * PX_PER_DAY}px`,
+        top: 0,
+        width: '1px',
+        height: '100%',
+        borderLeft: '2px dashed black',
+      }}></div>
+
       {gv.chunks.map((chunk, i) => <div key={i} style={{
         position: 'absolute',
         left: 0,
         right: 0,
-        top: `${chunk.start * 2}em`,
-        height: `${(chunk.end - chunk.start) * 2}em`,
-        backgroundColor: 'rgba(0, 0, 0, 0.1)',
-        borderBottom: '1px solid black',
+        top: `${chunk.start * PX_PER_DAY}px`,
+        height: `${(chunk.end - chunk.start) * PX_PER_DAY}px`,
+        // backgroundColor: 'rgba(0, 0, 0, 0.1)',
+        borderBottom: '1px solid gray',
       }}>
-        {chunk.start}-{chunk.end}:
-        {chunk.history.sort().toArray()}
+        h={chunk.start}-{chunk.end}
+        {/* : {chunk.history.sort().toArray()} */}
       </div>)}
 
+      {gv.past.map((box, i) => {
+        const dur = (box.rf - box.start.r0);
+        const up = box.start.arriveH0 < box.start.departH0;
+        const color = tripColors.get(box.start.tripId) ?? 'black';
+        return <div key={i} style={{
+          transform: 'skew(45deg)',
+          position: 'absolute',
+          left: `${(box.start.r0 + dur / 2) * PX_PER_DAY}px`,
+          width: '0',
+          top: `${box.start.departH0 * PX_PER_DAY}px`,
+          height: `${PX_PER_DAY * dur}px`,
+          color: color,
+          borderLeft: `1px dashed ${color}`,
+          display: 'flex', flexDirection: up ? 'row' : 'row-reverse',
+        }}>
+          {up ? '↗' : '↙'}
+        </div>
+      })}
+
+      {gv.past.map((box, i) => {
+        const dur = (box.rf - box.start.r0);
+        return <div key={i} style={{
+          transform: 'skew(45deg)',
+          position: 'absolute',
+          left: `${(box.start.r0 + dur / 2) * PX_PER_DAY}px`,
+          width: '100%',
+          top: `${box.start.arriveH0 * PX_PER_DAY}px`,
+          height: `${PX_PER_DAY * dur}px`,
+          backgroundColor: 'rgba(0, 0, 0, 0.1)',
+          borderLeft: `2px solid ${tripColors.get(box.start.tripId) ?? 'black'}`,
+        }}>
+          {/* {box.start.tripId}: r0 {box.start.r0} arr {box.start.arriveH0} dur {box.start.departH0 - box.start.arriveH0} */}
+        </div>
+      })}
     </div>
   </>
 }
 
 function App() {
   const [{ rules, tripsById }, setRules] = useState<{ rules: Map<History, List<Trip>>, tripsById: Map<TripId, Trip> }>((parseRuleset(`
-    -> a, 5, 3
-    
-  `) as Res<Ruleset> & { type: 'ok' }).val);
+    -> a, 10, 2
+    a -> b, 15, 8
+    a, b -> c, 18, 30; d, 20, 6
+      `) as Res<Ruleset> & { type: 'ok' }).val);
   const [hoveredCellInfo, setHoveredCellInfo] = useState<{ r: RealTime, h: Hypertime } | null>(null);
 
+  const [showStep, setShowStep] = useState(0);
   const gv0: GodView = useMemo(() => GodViewR({
     now: 0 as RealTime,
     chunks: List([ChunkR({ start: 0 as Hypertime, end: Infinity as Hypertime, history: Set() })]),
-    pastEvents: List(),
+    past: List(),
     rules,
   }), [rules]);
-  const gvSteps: List<GodView> = useMemo(() => {
-    let res = List([gv0]);
-    for (let i = 0; i < 20; i++) {
-      res = res.push(stepGodView(res.last()!));
+  const [gvSteps, setGvSteps] = useState(List([gv0]));
+  useEffect(() => setGvSteps(List([gv0])), [gv0]);
+  useEffect(() => setGvSteps(cur => {
+    if (showStep <= 0) return List([gv0]);
+    if (showStep < cur.size) return cur.slice(0, showStep + 1);
+    while (showStep >= cur.size) {
+      cur = cur.push(stepGodView(cur.last()!));
     }
-    return res;
-  }, [gv0]);
-  useEffect(() => console.log(gvSteps.toJS()), [gvSteps]);
+    if (showStep !== cur.size - 1) throw new Error('showStep !== cur.size - 1');
+    return cur;
+  }), [rules, gv0, showStep]);
 
-  const [showStep, setShowStep] = useState(0);
-  useEffect(() => console.log(showStep), [showStep]);
+  const fwd = useCallback(() => {
+    setShowStep(step => step + 1);
+  }, [setShowStep])
+  const bak = useCallback(() => {
+    setShowStep(step => Math.max(0, step - 1));
+  }, [setShowStep]);
   useEffect(() => {
     const cb = (e: KeyboardEvent) => {
-      if (e.key === 'ArrowRight') setShowStep(s => Math.min(s + 1, gvSteps.size - 1));
-      if (e.key === 'ArrowLeft') setShowStep(s => Math.max(s - 1, 0));
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (e.key === 'ArrowRight') { e.preventDefault(); fwd(); }
+      if (e.key === 'ArrowLeft') { e.preventDefault(); bak(); }
     };
     window.addEventListener('keydown', cb);
     return () => window.removeEventListener('keydown', cb);
-  }, [])
+  }, [fwd, bak]);
 
-  const { worldStates, arrivalInfos, departureInfos } = useMemo(
-    () => simulate(Map(), 0 as RealTime, 100, rules),
-    [rules]
-  );
   const tripColors = useMemo(() => Map(tripsById.keySeq().sort().map((nick, i) => [nick, COLORS[i % COLORS.length]])), [tripsById]);
 
   return (
     <>
+      {showStep} / {gvSteps.size}
+      {/* <Playground /> */}
       <div>
         <RulesetEditor init={{ rules, tripsById }} onChange={(ruleset: Ruleset) => {
           setRules(ruleset);
         }} />
       </div>
 
-      <GodViewE gv={gvSteps.get(showStep)!} />
+      <div>
+        Legend:
+        <ul>
+          {tripColors.entrySeq().sortBy(([nick]) => nick).map(([nick, color]) => <li key={nick} style={{ color }}>{nick}</li>)}
+        </ul>
+      </div>
+
+      <GodViewE gv={gvSteps.last()!} tripColors={tripColors} onHover={setHoveredCellInfo} />
 
       {hoveredCellInfo && <div className='hovered-cell-info'>
-        <div>RealTime: {hoveredCellInfo.r}</div>
-        <div>Hypertime: {hoveredCellInfo.h}</div>
-        <div>History: {worldStates.get(hoveredCellInfo.r)?.get(hoveredCellInfo.h)?.sort().map(t => <span key={t} style={{ color: tripColors.get(t) }}>{t}</span>)}</div>
-        <div>Departures: {departureInfos.get(hoveredCellInfo.r)?.get(hoveredCellInfo.h)?.sort().map(t => <span key={t} style={{ color: tripColors.get(t) }}>{t}</span>)}</div>
+        <div>RealTime: {hoveredCellInfo.r.toFixed(2)}</div>
+        <div>Hypertime: {hoveredCellInfo.h.toFixed(2)}</div>
+        <div>CalTime: {rh2ct(hoveredCellInfo).toFixed(2)}</div>
       </div>}
     </>
   )
+}
+
+function Playground() {
+  const [skew, setSkew] = useState(0);
+  const [r1, setR1] = useState(0);
+  const [h1, setH1] = useState(0);
+  const [r2, setR2] = useState(0);
+  const [h2, setH2] = useState(0);
+  return <div>
+    <input type='range' min={-45} max={45} value={skew} onChange={e => setSkew(parseInt(e.target.value))} /> {skew}deg<br />
+    <input type='range' min={0} max={5} step="any" value={r1} onChange={e => setR1(parseFloat(e.target.value))} /> r={r1}<br />
+    <input type='range' min={0} max={5} step="any" value={h1} onChange={e => setH1(parseFloat(e.target.value))} /> h={h1}<br />
+    <input type='range' min={0} max={5} step="any" value={r2} onChange={e => setR2(parseFloat(e.target.value))} /> r={r2}<br />
+    <input type='range' min={0} max={5} step="any" value={h2} onChange={e => setH2(parseFloat(e.target.value))} /> h={h2}<br />
+    <div style={{ position: 'absolute', width: '10em', height: '10em', outline: '1px solid black' }}>
+      <div style={{ transform: `skew(${skew}deg)`, position: 'absolute', left: `${2 * r1 + Math.tan(skew * Math.PI / 180)}em`, top: `${h1 * PX_PER_DAY}px`, width: '2em', height: '2em', backgroundColor: 'pink' }}></div>
+      <div style={{ transform: `skew(${skew}deg)`, position: 'absolute', left: `${2 * r2 + Math.tan(skew * Math.PI / 180)}em`, top: `${h2 * PX_PER_DAY}px`, width: '2em', height: '2em', backgroundColor: 'pink' }}></div>
+    </div>
+  </div>
 }
 
 export default App

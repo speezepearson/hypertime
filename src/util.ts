@@ -8,7 +8,7 @@ export type CalTime = number & { __type: 'CalTime' };
 export type Hypertime = number & { __type: 'Hypertime' };
 export type RealTime = number & { __type: 'RealTime' };
 export const hc2rt = ({ h, c }: { h: Hypertime, c: CalTime }) => { return h + c as RealTime };
-// export const rh2ct = ({ r, h }: { r: RealTime, h: Hypertime }) => r - h as CalTime;
+export const rh2ct = ({ r, h }: { r: RealTime, h: Hypertime }) => r - h as CalTime;
 export const rc2ht = ({ r, c }: { r: RealTime, c: CalTime }) => r - c as Hypertime;
 
 export type TripId = string & { __type: 'TripId' };
@@ -25,9 +25,32 @@ export const EventR = TotalRecord({
 });
 export type Event = ReturnType<typeof EventR>;
 
-export function normalizeEvents(events: List<Event>): List<Event> {
-  // TODO
-  return events.sortBy(e => e.r0);
+export const BoxR = TotalRecord({
+  start: undefined as any as Event,
+  rf: undefined as any as RealTime,
+});
+export type Box = ReturnType<typeof BoxR>;
+
+export function normalizeBoxes(boxes: List<Box>): List<Box> {
+  boxes = boxes.sortBy(b => b.start.r0);
+  if (boxes.isEmpty()) return List();
+  let res: List<Box> = List([boxes.first()!]);
+  for (let i = 1; i < boxes.size; i++) {
+    const newBox = boxes.get(i)!;
+    const prevInd = res.findLastIndex(b =>
+      (b.start.tripId === newBox.start.tripId && b.rf === newBox.start.r0)
+      || (newBox.start.departH0 <= b.start.arriveH0 && b.start.arriveH0 < newBox.start.departH0 + (newBox.rf - newBox.start.r0))
+    );
+    if (prevInd !== -1) {
+      const prev = res.get(prevInd)!;
+      if (prev.start.tripId === newBox.start.tripId && prev.rf === newBox.start.r0) {
+        res = res.set(prevInd, prev.set('rf', newBox.rf));
+        continue;
+      }
+    }
+    res = res.push(newBox);
+  }
+  return List(res);
 }
 
 export const ChunkR = TotalRecord({
@@ -36,7 +59,7 @@ export const ChunkR = TotalRecord({
   history: undefined as any as History,
 });
 export type Chunk = ReturnType<typeof ChunkR>;
-export function normalizeChunks(chunks: List<Chunk>): List<Chunk> {
+export function normalizeChunks(chunks: List<Chunk>, noJoinAt?: Set<Hypertime>): List<Chunk> {
   chunks = chunks.sortBy(s => s.start);
   if (chunks.size === 0) throw new Error('no chunks');
 
@@ -59,7 +82,7 @@ export function normalizeChunks(chunks: List<Chunk>): List<Chunk> {
     if (newChunk.start !== prev.end) {
       throw new Error('chunks have gaps: ' + JSON.stringify(res));
     }
-    if (newChunk.history.equals(prev.history)) {
+    if (newChunk.history.equals(prev.history) && !noJoinAt?.has(newChunk.start)) {
       res = res.set(res.size - 1, prev.set('end', newChunk.end));
     } else {
       res = res.push(newChunk);
@@ -72,18 +95,19 @@ export const GodViewR = TotalRecord({
   rules: undefined as any as Map<History, List<Trip>>,
   now: undefined as any as RealTime,
   chunks: undefined as any as List<Chunk>,
-  pastEvents: undefined as any as List<Event>,
+  past: undefined as any as List<Box>,
 });
 export type GodView = ReturnType<typeof GodViewR>;
 
 export function normalizeGodView(gv: GodView): GodView {
   let now = gv.now;
 
-  let chunks = normalizeChunks(gv.chunks);
+  let chunks = normalizeChunks(gv.chunks, getNonPastEvents(gv).map(e => e.departH0).toSet());
 
-  let pastEvents = normalizeEvents(gv.pastEvents);
-  for (const e of pastEvents) {
-    if (e.r0 >= now) throw new Error('supposedly-past event is actually in future: ' + JSON.stringify(e));
+  let past = normalizeBoxes(gv.past);
+  for (const b of past) {
+    if (b.start.r0 >= b.rf) throw new Error('box has zero or negative length: ' + JSON.stringify(b));
+    if (b.rf > now) throw new Error('supposedly-past event is actually in future: ' + JSON.stringify([gv.now, b]));
   }
 
   // let immediateEvents = normalizeEvents(gv.immediateEvents);
@@ -107,7 +131,7 @@ export function normalizeGodView(gv: GodView): GodView {
     rules: gv.rules,
     now,
     chunks,
-    pastEvents,
+    past,
   });
 }
 
@@ -125,8 +149,10 @@ export function getNonPastEvents(gv: GodView): List<Event> {
       const arriveH0 = rc2ht({ r: r0, c: trip.arrive });
       if (r0 < gv.now) continue;
       res.push(EventR({ tripId: trip.nick, r0, departH0: chunk.start, arriveH0 }));
-      if (r0 === gv.now) {
-        for (const nextTrip of gv.rules.get(chunk.history) ?? []) {
+      if (r0 === gv.now && arriveH0 >= 0) {
+        const arrivalChunk = gv.chunks.find(c => c.start <= arriveH0 && arriveH0 < c.end);
+        if (!arrivalChunk) throw new Error('no chunk contains ' + arriveH0);
+        for (const nextTrip of gv.rules.get(arrivalChunk.history.add(trip.nick)) ?? []) {
           const r0 = hc2rt({ h: arriveH0, c: nextTrip.depart });
           const nextArriveH0 = rc2ht({ r: r0, c: nextTrip.arrive });
           if (r0 <= gv.now) continue;
@@ -144,6 +170,7 @@ export function getNextInterestingTime(gv: GodView): RealTime {
     return [
       gv.now + timeUntilChunkEnd(gv.chunks, e.departH0),
       gv.now + timeUntilChunkEnd(gv.chunks, e.arriveH0),
+      ...events.flatMap(e2 => e2.r0 === gv.now && e2.arriveH0 > e.departH0 ? [gv.now + e2.arriveH0 - e.departH0] : []),
     ]
   })) as RealTime;
 }
@@ -166,6 +193,18 @@ export function evolveChunks(chunks: List<Chunk>, events: List<Event>, dt: numbe
         ];
       });
     }
+    const departures = events.filter(e => chunk.start <= e.departH0 && e.departH0 < chunk.end);
+    for (const e of departures) {
+      subchunks = subchunks.flatMap(subchunk => {
+        const overlap = iop.intersection([subchunk.start, subchunk.end], [e.departH0, e.departH0 + dt]);
+        if (!overlap) return subchunk;
+        const difference = iop.arrayDifference([[subchunk.start, subchunk.end]], [overlap]);
+        return [
+          ChunkR({ start: overlap[0] as Hypertime, end: overlap[1] as Hypertime, history: subchunk.history }),
+          ...difference.map(([start, end]) => ChunkR({ start: start as Hypertime, end: end as Hypertime, history: subchunk.history })),
+        ];
+      });
+    }
     return subchunks;
   });
 
@@ -183,13 +222,15 @@ export function stepGodView(gv: GodView): GodView {
 
 
   const newNow = stepUntil;
-  const newPastEvents = gv.pastEvents.concat(immEvents.map(e =>
-    EventR({ tripId: e.tripId, r0: e.r0, departH0: e.departH0, arriveH0: e.arriveH0 })));
+  const newPast = gv.past.concat(immEvents.map(e => BoxR({
+    start: EventR({ tripId: e.tripId, r0: e.r0, departH0: e.departH0, arriveH0: e.arriveH0 }),
+    rf: e.r0 + dt as RealTime,
+  })));
 
   return normalizeGodView(GodViewR({
     rules: gv.rules,
     now: newNow,
     chunks: newChunks,
-    pastEvents: newPastEvents,
+    past: newPast,
   }));
 }

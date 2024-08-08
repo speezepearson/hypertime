@@ -1,3 +1,14 @@
 .skew {
   transform: skew(45deg);
 }
+
+
+.hovered-cell-info {
+  position: fixed;
+  top: 0;
+  right: 0;
+  padding: 0.5em;
+  background-color: #fff;
+  border: 1px solid #000;
+  z-index: 1;
+}

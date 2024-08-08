@@ -1,6 +1,6 @@
 import { List, Map, Set } from 'immutable';
 import { describe, expect, test } from 'vitest';
-import { CalTime, Chunk, ChunkR, EventR, getNextInterestingTime, getNonPastEvents, GodViewR, Hypertime, normalizeChunks, normalizeEvents, RealTime, TripId, TripR } from './util';
+import { BoxR, CalTime, Chunk, ChunkR, EventR, getNextInterestingTime, getNonPastEvents, GodViewR, Hypertime, normalizeChunks, RealTime, TripId, TripR } from './util';
 
 const mkTrip = (args: { nick: string, depart: number, arrive: number }) => TripR({
   nick: args.nick as TripId,
@@ -15,16 +15,21 @@ const mkEvent = (args: { tripId: string, r0: number, departH0: number, arriveH0:
   arriveH0: args.arriveH0 as Hypertime,
 });
 type LazyEvent = Parameters<typeof mkEvent>[0];
+const mkBox = ({ rf, ...event }: LazyEvent & { rf: RealTime }) => BoxR({
+  start: mkEvent(event),
+  rf,
+});
+type LazyBox = Parameters<typeof mkBox>[0];
 const mkChunk = (args: { start: number, end: number, history: string[] }) => ChunkR({
   start: args.start as Hypertime,
   end: args.end as Hypertime,
   history: Set(args.history as TripId[]),
 });
 type LazyChunk = Parameters<typeof mkChunk>[0];
-const mkGodView = (args: { rules: [string[], LazyTrip[]][], now: number, chunks: LazyChunk[], pastEvents: LazyEvent[] }) => GodViewR({
+const mkGodView = (args: { rules: [string[], LazyTrip[]][], now: number, chunks: LazyChunk[], past: LazyBox[] }) => GodViewR({
   now: args.now as RealTime,
   chunks: List(args.chunks.map(mkChunk)),
-  pastEvents: List(args.pastEvents.map(mkEvent)),
+  past: List(args.past.map(mkBox)),
   rules: Map(args.rules.map(([history, trips]) => [Set(history as TripId[]), List(trips.map(mkTrip))]))
 });
 type LazyGodView = Parameters<typeof mkGodView>[0];
@@ -99,28 +104,28 @@ describe('normalizeChunks', () => {
 describe('getNextInterestingTime', () => {
   test('never in empty universe', () => {
     expect(getNextInterestingTime(mkGodView(
-      { rules: [], now: 5, chunks: [{ start: 0, end: Infinity, history: [] }], pastEvents: [] },
+      { rules: [], now: 5, chunks: [{ start: 0, end: Infinity, history: [] }], past: [] },
     ))).toStrictEqual(
       Infinity,
     );
   });
   test('next trip time in simplest universe', () => {
     expect(getNextInterestingTime(mkGodView(
-      { rules: [[[], [{ nick: 'a', depart: 8, arrive: 6 }]]], now: 5, chunks: [{ start: 0, end: Infinity, history: [] }], pastEvents: [] },
+      { rules: [[[], [{ nick: 'a', depart: 8, arrive: 6 }]]], now: 5, chunks: [{ start: 0, end: Infinity, history: [] }], past: [] },
     ))).toStrictEqual(
       8,
     );
   });
   test('never if only future-travel is ongoing', () => {
     expect(getNextInterestingTime(mkGodView(
-      { rules: [[[], [{ nick: 'a', depart: 5, arrive: 7 }]]], now: 5, chunks: [{ start: 0, end: Infinity, history: [] }], pastEvents: [] },
+      { rules: [[[], [{ nick: 'a', depart: 5, arrive: 7 }]]], now: 5, chunks: [{ start: 0, end: Infinity, history: [] }], past: [] },
     ))).toStrictEqual(
       7,
     );
   });
   test('self-intersection time when past-travel is ongoing', () => {
     expect(getNextInterestingTime(mkGodView(
-      { rules: [[[], [{ nick: 'a', depart: 5, arrive: 3 }]]], now: 5, chunks: [{ start: 0, end: Infinity, history: [] }], pastEvents: [] },
+      { rules: [[[], [{ nick: 'a', depart: 5, arrive: 3 }]]], now: 5, chunks: [{ start: 0, end: Infinity, history: [] }], past: [] },
     ))).toStrictEqual(
       7,
     );
@@ -130,28 +135,28 @@ describe('getNextInterestingTime', () => {
 describe('getNonPastEvents', () => {
   test('no events for empty universe', () => {
     expect(getNonPastEvents(mkGodView(
-      { rules: [], now: 0, pastEvents: [], chunks: [{ start: 0, end: Infinity, history: [] }] },
+      { rules: [], now: 0, past: [], chunks: [{ start: 0, end: Infinity, history: [] }] },
     ))).toStrictEqual(
       List(),
     );
   });
   test('includes a simple immediate event', () => {
     expect(getNonPastEvents(mkGodView(
-      { rules: [[[], [{ nick: 'a', depart: 3, arrive: 1 }]]], now: 0, pastEvents: [], chunks: [{ start: 0, end: Infinity, history: [] }] },
+      { rules: [[[], [{ nick: 'a', depart: 3, arrive: 1 }]]], now: 0, past: [], chunks: [{ start: 0, end: Infinity, history: [] }] },
     ))).toStrictEqual(
       List([mkEvent({ tripId: 'a', r0: 3, departH0: 0, arriveH0: 2 })]),
     );
   });
   test('includes a simple future event', () => {
     expect(getNonPastEvents(mkGodView(
-      { rules: [[[], [{ nick: 'a', depart: 3, arrive: 5 }]]], now: 0, pastEvents: [], chunks: [{ start: 0, end: Infinity, history: [] }] },
+      { rules: [[[], [{ nick: 'a', depart: 3, arrive: 5 }]]], now: 0, past: [], chunks: [{ start: 0, end: Infinity, history: [] }] },
     ))).toStrictEqual(
       List([mkEvent({ tripId: 'a', r0: 3, departH0: 0, arriveH0: -2 })]),
     );
   });
   test('ignores past events', () => {
     expect(getNonPastEvents(mkGodView(
-      { rules: [[[], [{ nick: 'a', depart: -1, arrive: 3 }]]], now: 0, pastEvents: [], chunks: [{ start: 0, end: Infinity, history: [] }] },
+      { rules: [[[], [{ nick: 'a', depart: -1, arrive: 3 }]]], now: 0, past: [], chunks: [{ start: 0, end: Infinity, history: [] }] },
     ))).toStrictEqual(
       List(),
     );
