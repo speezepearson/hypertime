@@ -74,14 +74,17 @@ function RulesetEditor({ init, onChange }: { init?: Ruleset, onChange: (ruleset:
 // All these need to be readable against a white background.
 const COLORS = ['red', 'green', 'blue', 'purple', 'orange', 'magenta', 'cyan', 'brown', 'black', 'gray'];
 
-const PX_PER_DAY = 20;
 function GodViewE({ gv, tripColors, onHover }: { gv: GodView, tripColors: Map<TripId, string>, onHover: (info: { r: RealTime, h: Hypertime } | null) => void }) {
+
+  const [scale, setScale] = useState(0);
+  const pxPerDay = 20 * Math.exp(scale);
+
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const cb = (e: MouseEvent) => {
       const rect = ref.current!.getBoundingClientRect();
-      const r = (e.clientX - rect.left) / PX_PER_DAY as RealTime;
-      const h = (e.clientY - rect.top) / PX_PER_DAY as Hypertime;
+      const r = (e.clientX - rect.left) / pxPerDay as RealTime;
+      const h = (e.clientY - rect.top) / pxPerDay as Hypertime;
       onHover({ r, h });
     };
     const refCurrent = ref.current;
@@ -89,7 +92,7 @@ function GodViewE({ gv, tripColors, onHover }: { gv: GodView, tripColors: Map<Tr
     return () => refCurrent?.removeEventListener('mousemove', cb);
   }, []);
 
-  return <div onMouseLeave={() => onHover(null)}>
+  return <div>
     <details><summary>Debug info (t={gv.now}, next={getNextInterestingTime(gv)})</summary>
       <ul>
         <li>Future events: <ul>{getNonPastEvents(gv).map((e, i) => <li key={i}>{e.tripId} at {e.r0}</li>)}</ul></li>
@@ -98,27 +101,34 @@ function GodViewE({ gv, tripColors, onHover }: { gv: GodView, tripColors: Map<Tr
       </ul>
     </details>
 
-    <div style={{ position: 'absolute', width: '100%', height: '100%', overflow: 'scroll' }} ref={ref}>
+    Scale:
+    <input type='range' style={{ width: '200px' }} min={-5} max={5} step="any" value={scale} onChange={e => setScale(parseFloat(e.target.value))} />
+
+    <div
+      ref={ref}
+      onMouseLeave={() => onHover(null)}
+      style={{ position: 'absolute', width: '100%', height: '100%', overflow: 'scroll' }}
+    >
 
       <div style={{
         position: 'absolute',
-        left: `${gv.now * PX_PER_DAY}px`,
+        left: `${gv.now * pxPerDay}px`,
         top: 0,
         width: '1px',
         height: '100%',
-        borderLeft: '2px dashed black',
-      }}></div>
+        borderLeft: '1px solid color-mix(in srgb, black, transparent 80%)',
+      }}>now</div>
 
       {gv.chunks.map((chunk, i) => <div key={i} style={{
         position: 'absolute',
         left: 0,
         right: 0,
-        top: `${chunk.start * PX_PER_DAY}px`,
-        height: `${(chunk.end - chunk.start) * PX_PER_DAY}px`,
+        top: `${chunk.start * pxPerDay}px`,
+        height: `${(chunk.end - chunk.start) * pxPerDay}px`,
         // backgroundColor: 'rgba(0, 0, 0, 0.1)',
         borderBottom: '1px solid gray',
       }}>
-        h={chunk.start}-{chunk.end}
+        {chunk.start === 0 && 'hypertimes '}{chunk.start}-{chunk.end}
         {/* : {chunk.history.sort().toArray()} */}
       </div>)}
 
@@ -129,12 +139,12 @@ function GodViewE({ gv, tripColors, onHover }: { gv: GodView, tripColors: Map<Tr
         return <div key={i} style={{
           transform: 'skew(45deg)',
           position: 'absolute',
-          left: `${(box.start.r0 + dur / 2) * PX_PER_DAY}px`,
+          left: `${(box.start.r0 + dur / 2) * pxPerDay}px`,
           width: '0',
-          top: `${box.start.departH0 * PX_PER_DAY}px`,
-          height: `${PX_PER_DAY * dur}px`,
+          top: `${box.start.departH0 * pxPerDay}px`,
+          height: `${pxPerDay * dur}px`,
           color: color,
-          borderLeft: `1px dashed ${color}`,
+          borderLeft: `0.5px solid color-mix(in srgb, ${color}, transparent)`,
           display: 'flex', flexDirection: up ? 'row' : 'row-reverse',
         }}>
           {up ? '↗' : '↙'}
@@ -146,10 +156,10 @@ function GodViewE({ gv, tripColors, onHover }: { gv: GodView, tripColors: Map<Tr
         return <div key={i} style={{
           transform: 'skew(45deg)',
           position: 'absolute',
-          left: `${(box.start.r0 + dur / 2) * PX_PER_DAY}px`,
+          left: `${(box.start.r0 + dur / 2) * pxPerDay}px`,
           width: '100%',
-          top: `${box.start.arriveH0 * PX_PER_DAY}px`,
-          height: `${PX_PER_DAY * dur}px`,
+          top: `${box.start.arriveH0 * pxPerDay}px`,
+          height: `${pxPerDay * dur}px`,
           backgroundColor: 'rgba(0, 0, 0, 0.1)',
           borderLeft: `2px solid ${tripColors.get(box.start.tripId) ?? 'black'}`,
         }}>
@@ -252,8 +262,8 @@ function App() {
 //     <input type='range' min={0} max={5} step="any" value={r2} onChange={e => setR2(parseFloat(e.target.value))} /> r={r2}<br />
 //     <input type='range' min={0} max={5} step="any" value={h2} onChange={e => setH2(parseFloat(e.target.value))} /> h={h2}<br />
 //     <div style={{ position: 'absolute', width: '10em', height: '10em', outline: '1px solid black' }}>
-//       <div style={{ transform: `skew(${skew}deg)`, position: 'absolute', left: `${2 * r1 + Math.tan(skew * Math.PI / 180)}em`, top: `${h1 * PX_PER_DAY}px`, width: '2em', height: '2em', backgroundColor: 'pink' }}></div>
-//       <div style={{ transform: `skew(${skew}deg)`, position: 'absolute', left: `${2 * r2 + Math.tan(skew * Math.PI / 180)}em`, top: `${h2 * PX_PER_DAY}px`, width: '2em', height: '2em', backgroundColor: 'pink' }}></div>
+//       <div style={{ transform: `skew(${skew}deg)`, position: 'absolute', left: `${2 * r1 + Math.tan(skew * Math.PI / 180)}em`, top: `${h1 * pxPerDay}px`, width: '2em', height: '2em', backgroundColor: 'pink' }}></div>
+//       <div style={{ transform: `skew(${skew}deg)`, position: 'absolute', left: `${2 * r2 + Math.tan(skew * Math.PI / 180)}em`, top: `${h2 * pxPerDay}px`, width: '2em', height: '2em', backgroundColor: 'pink' }}></div>
 //     </div>
 //   </div>
 // }
