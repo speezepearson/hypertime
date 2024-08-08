@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { List, Map, Set } from 'immutable';
 
 import './App.css';
-import { CalTime, ChunkR, getNextInterestingTime, getNonPastEvents, GodView, GodViewR, hc2rt, History, Hypertime, rc2ht, RealTime, rh2ct, stepGodView, Trip, TripId, TripR } from './util';
+import { CalTime, ChunkR, getNextInterestingTime, getNonPastEvents, GodView, GodViewR, History, Hypertime, RealTime, rh2ct, stepGodView, Trip, TripId, TripR } from './util';
 
 
 type Ruleset = {
@@ -171,7 +171,9 @@ function App() {
   const [showStep, setShowStep] = useState(20);
   const gv0: GodView = useMemo(() => GodViewR({
     now: 0 as RealTime,
-    chunks: List([ChunkR({ start: 0 as Hypertime, end: Infinity as Hypertime, history: Set() })]),
+    chunks: List([
+      ChunkR({ start: 0 as Hypertime, end: Infinity as Hypertime, history: Set() }),
+    ]),
     past: List(),
     rules,
   }), [rules]);
@@ -239,23 +241,23 @@ function App() {
   )
 }
 
-function Playground() {
-  const [skew, setSkew] = useState(0);
-  const [r1, setR1] = useState(0);
-  const [h1, setH1] = useState(0);
-  const [r2, setR2] = useState(0);
-  const [h2, setH2] = useState(0);
-  return <div>
-    <input type='range' min={-45} max={45} value={skew} onChange={e => setSkew(parseInt(e.target.value))} /> {skew}deg<br />
-    <input type='range' min={0} max={5} step="any" value={r1} onChange={e => setR1(parseFloat(e.target.value))} /> r={r1}<br />
-    <input type='range' min={0} max={5} step="any" value={h1} onChange={e => setH1(parseFloat(e.target.value))} /> h={h1}<br />
-    <input type='range' min={0} max={5} step="any" value={r2} onChange={e => setR2(parseFloat(e.target.value))} /> r={r2}<br />
-    <input type='range' min={0} max={5} step="any" value={h2} onChange={e => setH2(parseFloat(e.target.value))} /> h={h2}<br />
-    <div style={{ position: 'absolute', width: '10em', height: '10em', outline: '1px solid black' }}>
-      <div style={{ transform: `skew(${skew}deg)`, position: 'absolute', left: `${2 * r1 + Math.tan(skew * Math.PI / 180)}em`, top: `${h1 * PX_PER_DAY}px`, width: '2em', height: '2em', backgroundColor: 'pink' }}></div>
-      <div style={{ transform: `skew(${skew}deg)`, position: 'absolute', left: `${2 * r2 + Math.tan(skew * Math.PI / 180)}em`, top: `${h2 * PX_PER_DAY}px`, width: '2em', height: '2em', backgroundColor: 'pink' }}></div>
-    </div>
-  </div>
-}
+// function Playground() {
+//   const [skew, setSkew] = useState(0);
+//   const [r1, setR1] = useState(0);
+//   const [h1, setH1] = useState(0);
+//   const [r2, setR2] = useState(0);
+//   const [h2, setH2] = useState(0);
+//   return <div>
+//     <input type='range' min={-45} max={45} value={skew} onChange={e => setSkew(parseInt(e.target.value))} /> {skew}deg<br />
+//     <input type='range' min={0} max={5} step="any" value={r1} onChange={e => setR1(parseFloat(e.target.value))} /> r={r1}<br />
+//     <input type='range' min={0} max={5} step="any" value={h1} onChange={e => setH1(parseFloat(e.target.value))} /> h={h1}<br />
+//     <input type='range' min={0} max={5} step="any" value={r2} onChange={e => setR2(parseFloat(e.target.value))} /> r={r2}<br />
+//     <input type='range' min={0} max={5} step="any" value={h2} onChange={e => setH2(parseFloat(e.target.value))} /> h={h2}<br />
+//     <div style={{ position: 'absolute', width: '10em', height: '10em', outline: '1px solid black' }}>
+//       <div style={{ transform: `skew(${skew}deg)`, position: 'absolute', left: `${2 * r1 + Math.tan(skew * Math.PI / 180)}em`, top: `${h1 * PX_PER_DAY}px`, width: '2em', height: '2em', backgroundColor: 'pink' }}></div>
+//       <div style={{ transform: `skew(${skew}deg)`, position: 'absolute', left: `${2 * r2 + Math.tan(skew * Math.PI / 180)}em`, top: `${h2 * PX_PER_DAY}px`, width: '2em', height: '2em', backgroundColor: 'pink' }}></div>
+//     </div>
+//   </div>
+// }
 
 export default App

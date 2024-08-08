@@ -32,7 +32,7 @@ const mkGodView = (args: { rules: [string[], LazyTrip[]][], now: number, chunks:
   past: List(args.past.map(mkBox)),
   rules: Map(args.rules.map(([history, trips]) => [Set(history as TripId[]), List(trips.map(mkTrip))]))
 });
-type LazyGodView = Parameters<typeof mkGodView>[0];
+// type LazyGodView = Parameters<typeof mkGodView>[0];
 
 describe('normalizeEvents', () => {
   // TODO
