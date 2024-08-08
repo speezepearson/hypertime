@@ -216,9 +216,9 @@ export function stepGodView(gv: GodView): GodView {
   const stepUntil = getNextInterestingTime(gv);
   const dt = stepUntil - gv.now;
   const events = getNonPastEvents(gv);
-  const immEvents = events.filter(e => e.r0 === gv.now);
-  const immArrivalHypertimes = Set(immEvents.map(e => e.arriveH0));
-  const newChunks = evolveChunks(gv.chunks, immEvents.filter(e => !immArrivalHypertimes.has(e.departH0)), dt);
+  const immArrivalHypertimes = Set(events.filter(e => e.r0 === gv.now).map(e => e.arriveH0));
+  const immEvents = events.filter(e => e.r0 === gv.now && !immArrivalHypertimes.has(e.departH0));
+  const newChunks = evolveChunks(gv.chunks, immEvents, dt);
 
 
   const newNow = stepUntil;
