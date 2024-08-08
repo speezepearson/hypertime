@@ -12,7 +12,7 @@ export const rh2ct = ({ r, h }: { r: RealTime, h: Hypertime }) => r - h as CalTi
 export const rc2ht = ({ r, c }: { r: RealTime, c: CalTime }) => r - c as Hypertime;
 
 export type TripId = string & { __type: 'TripId' };
-export const TripR = TotalRecord({ nick: undefined as any as TripId, depart: undefined as any as CalTime, arrive: undefined as any as CalTime });
+export const TripR = TotalRecord({ id: undefined as any as TripId, depart: undefined as any as CalTime, arrive: undefined as any as CalTime });
 export type Trip = ReturnType<typeof TripR>;
 export type History = Set<TripId>;
 
@@ -148,15 +148,15 @@ export function getNonPastEvents(gv: GodView): List<Event> {
       const r0 = hc2rt({ h: chunk.start, c: trip.depart });
       const arriveH0 = rc2ht({ r: r0, c: trip.arrive });
       if (r0 < gv.now) continue;
-      res.push(EventR({ tripId: trip.nick, r0, departH0: chunk.start, arriveH0 }));
+      res.push(EventR({ tripId: trip.id, r0, departH0: chunk.start, arriveH0 }));
       if (r0 === gv.now && arriveH0 >= 0) {
         const arrivalChunk = gv.chunks.find(c => c.start <= arriveH0 && arriveH0 < c.end);
         if (!arrivalChunk) throw new Error('no chunk contains ' + arriveH0);
-        for (const nextTrip of gv.rules.get(arrivalChunk.history.add(trip.nick)) ?? []) {
+        for (const nextTrip of gv.rules.get(arrivalChunk.history.add(trip.id)) ?? []) {
           const r0 = hc2rt({ h: arriveH0, c: nextTrip.depart });
           const nextArriveH0 = rc2ht({ r: r0, c: nextTrip.arrive });
           if (r0 <= gv.now) continue;
-          res.push(EventR({ tripId: nextTrip.nick, r0, departH0: chunk.start, arriveH0: nextArriveH0 }));
+          res.push(EventR({ tripId: nextTrip.id, r0, departH0: chunk.start, arriveH0: nextArriveH0 }));
         }
       }
     }

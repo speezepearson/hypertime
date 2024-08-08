@@ -20,12 +20,12 @@ function parseRuleset(s: string): Res<Ruleset> {
     const history = Set(historyStr.split(',').map(s => s.trim()).filter(x => x)) as Set<TripId>;
     let trips = List<Trip>();
     for (const tripS of futureStr.split(';').map(s => s.trim()).filter(x => x)) {
-      const match = /^(.*), *(-?[0-9]+) *, *(-?[0-9]+) *$/.exec(tripS);
-      if (!match) return { type: 'err', err: 'Format: $NICK,$DEPART,ARRIVE; $NICK,$DEPART,ARRIVE; ...' };
-      const [_, nick, departS, arriveS] = match.map(s => s.trim());
-      if (arriveS === undefined) return { type: 'err', err: 'Format: $NICK,$DEPART,$ARRIVE; $NICK,$DEPART,$ARRIVE; ...' };
-      const [depart, arrive] = [departS, arriveS].map(s => parseInt(s)) as [CalTime, CalTime];
-      trips = trips.push(TripR({ nick: nick as TripId, depart, arrive }));
+      const match = /^(.*), *(-?[0-9.]+) *, *(-?[0-9.]+) *$/.exec(tripS);
+      if (!match) return { type: 'err', err: 'Format: $ID,$DEPART,ARRIVE; $ID,$DEPART,ARRIVE; ...' };
+      const [_, id, departS, arriveS] = match.map(s => s.trim());
+      if (arriveS === undefined) return { type: 'err', err: 'Format: $ID,$DEPART,$ARRIVE; $ID,$DEPART,$ARRIVE; ...' };
+      const [depart, arrive] = [departS, arriveS].map(s => parseFloat(s)) as [CalTime, CalTime];
+      trips = trips.push(TripR({ id: id as TripId, depart, arrive }));
     };
     ruleLines = ruleLines.push({ history, trips });
   };
@@ -33,8 +33,8 @@ function parseRuleset(s: string): Res<Ruleset> {
   let tripsById: Map<TripId, Trip> = Map();
   for (const { trips } of ruleLines) {
     for (const trip of trips) {
-      if (tripsById.has(trip.nick)) return { type: 'err', err: `Duplicate nickname: ${trip.nick}` };
-      tripsById = tripsById.set(trip.nick, trip);
+      if (tripsById.has(trip.id)) return { type: 'err', err: `Duplicate id: ${trip.id}` };
+      tripsById = tripsById.set(trip.id, trip);
     }
   }
 
@@ -50,7 +50,7 @@ function parseRuleset(s: string): Res<Ruleset> {
 function RulesetEditor({ init, onChange }: { init?: Ruleset, onChange: (ruleset: Ruleset) => void }) {
   const [textF, setTextF] = useState(() => !init ? '' : init.rules
     .entrySeq()
-    .map(([history, trips]) => `${history.join(', ')} -> ${trips.map(t => `${t.nick},${t.depart},${t.arrive}`).join('; ')}`)
+    .map(([history, trips]) => `${history.join(', ')} -> ${trips.map(t => `${t.id},${t.depart},${t.arrive}`).join('; ')}`)
     .join('\n')
   );
 
@@ -203,7 +203,7 @@ function App() {
     return () => window.removeEventListener('keydown', cb);
   }, [fwd, bak]);
 
-  const tripColors = useMemo(() => Map(tripsById.keySeq().sort().map((nick, i) => [nick, COLORS[i % COLORS.length]])), [tripsById]);
+  const tripColors = useMemo(() => Map(tripsById.keySeq().sort().map((id, i) => [id, COLORS[i % COLORS.length]])), [tripsById]);
 
   return (
     <>
@@ -218,7 +218,7 @@ function App() {
       <div>
         Legend:
         <ul>
-          {tripColors.entrySeq().sortBy(([nick]) => nick).map(([nick, color]) => <li key={nick} style={{ color }}>{nick}</li>)}
+          {tripColors.entrySeq().sortBy(([id]) => id).map(([id, color]) => <li key={id} style={{ color }}>{id}</li>)}
         </ul>
       </div>
 
