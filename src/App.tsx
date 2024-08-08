@@ -168,7 +168,7 @@ function App() {
       `) as Res<Ruleset> & { type: 'ok' }).val);
   const [hoveredCellInfo, setHoveredCellInfo] = useState<{ r: RealTime, h: Hypertime } | null>(null);
 
-  const [showStep, setShowStep] = useState(0);
+  const [showStep, setShowStep] = useState(20);
   const gv0: GodView = useMemo(() => GodViewR({
     now: 0 as RealTime,
     chunks: List([ChunkR({ start: 0 as Hypertime, end: Infinity as Hypertime, history: Set() })]),
