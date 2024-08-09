@@ -234,3 +234,13 @@ export function stepGodView(gv: GodView): GodView {
     past: newPast,
   }));
 }
+
+export function evolveUntil(until: RealTime, gv: GodView): GodView {
+  let res = gv;
+  while (res.now < until) {
+    const next = stepGodView(res);
+    if (next.now <= res.now) throw new Error('stuck at ' + res.now);
+    res = next;
+  }
+  return res;
+}

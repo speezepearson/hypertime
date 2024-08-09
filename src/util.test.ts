@@ -1,6 +1,6 @@
 import { List, Map, Set } from 'immutable';
 import { describe, expect, test } from 'vitest';
-import { BoxR, CalTime, Chunk, ChunkR, EventR, getNextInterestingTime, getNonPastEvents, GodViewR, Hypertime, normalizeChunks, RealTime, TripId, TripR } from './util';
+import { BoxR, CalTime, Chunk, ChunkR, EventR, evolveUntil, getNextInterestingTime, getNonPastEvents, GodViewR, Hypertime, normalizeChunks, RealTime, stepGodView, TripId, TripR } from './util';
 
 const mkTrip = (args: { id: string, depart: number, arrive: number }) => TripR({
   id: args.id as TripId,
@@ -15,9 +15,9 @@ const mkEvent = (args: { tripId: string, r0: number, departH0: number, arriveH0:
   arriveH0: args.arriveH0 as Hypertime,
 });
 type LazyEvent = Parameters<typeof mkEvent>[0];
-const mkBox = ({ rf, ...event }: LazyEvent & { rf: RealTime }) => BoxR({
+const mkBox = ({ rf, ...event }: LazyEvent & { rf: number }) => BoxR({
   start: mkEvent(event),
-  rf,
+  rf: rf as RealTime,
 });
 type LazyBox = Parameters<typeof mkBox>[0];
 const mkChunk = (args: { start: number, end: number, history: string[] }) => ChunkR({
@@ -26,12 +26,12 @@ const mkChunk = (args: { start: number, end: number, history: string[] }) => Chu
   history: Set(args.history as TripId[]),
 });
 type LazyChunk = Parameters<typeof mkChunk>[0];
-const mkGodView = (args: { rules: [string[], LazyTrip[]][], now: number, chunks: LazyChunk[], past: LazyBox[] }) => {
-  const rulesMap = Map(args.rules.map(([history, trips]) => [Set(history as TripId[]), List(trips.map(mkTrip))]));
+const mkGodView = ({ rules, now = 0, chunks = [{ start: 0, end: Infinity, history: [] }], past = [] }: { rules: [string[], LazyTrip[]][], now?: number, chunks?: LazyChunk[], past?: LazyBox[] }) => {
+  const rulesMap = Map(rules.map(([history, trips]) => [Set(history as TripId[]), List(trips.map(mkTrip))]));
   return GodViewR({
-    now: args.now as RealTime,
-    chunks: List(args.chunks.map(mkChunk)),
-    past: List(args.past.map(mkBox)),
+    now: now as RealTime,
+    chunks: List(chunks.map(mkChunk)),
+    past: List(past.map(mkBox)),
     rules: h => rulesMap.get(h, List()),
   });
 };
@@ -163,5 +163,57 @@ describe('getNonPastEvents', () => {
     ))).toStrictEqual(
       List(),
     );
+  });
+});
+
+describe('stepGodView', () => {
+  test('noop on empty universe', () => {
+    expect(stepGodView(mkGodView(
+      { rules: [], now: 0, chunks: [{ start: 0, end: Infinity, history: [] }], past: [] }
+    )).delete('rules')).toStrictEqual(mkGodView(
+      { rules: [], now: Infinity, chunks: [{ start: 0, end: Infinity, history: [] }], past: [] }
+    ).delete('rules'));
+  });
+});
+
+
+describe('evolveUntil', () => {
+  test('finishes on empty universe', () => {
+    expect(evolveUntil(10 as RealTime, mkGodView(
+      { rules: [] }
+    )).delete('rules')).toStrictEqual(mkGodView(
+      { rules: [], now: Infinity }
+    ).delete('rules'));
+  });
+
+  test('repeating stripes for single back-in-time traveler', () => {
+    const actual = evolveUntil(20 as RealTime, mkGodView(
+      { rules: [[[], [{ id: 'a', depart: 3, arrive: 1 }]]] }
+    ));
+    const expected = List([
+      mkBox({ tripId: 'a', r0: 3, departH0: 0, arriveH0: 2, rf: 5 }),
+      mkBox({ tripId: 'a', r0: 7, departH0: 4, arriveH0: 6, rf: 9 }),
+      mkBox({ tripId: 'a', r0: 11, departH0: 8, arriveH0: 10, rf: 13 }),
+      mkBox({ tripId: 'a', r0: 15, departH0: 12, arriveH0: 14, rf: 17 }),
+      mkBox({ tripId: 'a', r0: 19, departH0: 16, arriveH0: 18, rf: actual.now }),
+    ]);
+    expect(actual.past).toStrictEqual(expected);
+  });
+
+  test('arriving traveller preempts concurrent departure', () => {
+    const actual = evolveUntil(15 as RealTime, mkGodView(
+      {
+        rules: [
+          [[], [{ id: 'a', depart: 5, arrive: 0 }]],
+          [['a'], [{ id: 'b', depart: 2, arrive: 5 }]],
+        ], now: 0
+      }
+    ));
+    const expected = List([
+      mkBox({ tripId: 'a', r0: 5, departH0: 0, arriveH0: 5, rf: 7 }),
+      mkBox({ tripId: 'b', r0: 7, departH0: 5, arriveH0: 2, rf: 9 }),
+      mkBox({ tripId: 'a', r0: 9, departH0: 4, arriveH0: 9, rf: 10 }),
+    ]);
+    expect(actual.past.slice(0, 3)).toStrictEqual(expected);
   });
 });
