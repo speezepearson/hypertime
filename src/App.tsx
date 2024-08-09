@@ -30,11 +30,11 @@ function parseRuleset(s: string): Res<Ruleset> {
     const match = /^(.*) *=> *(.*): (-?[0-9.]+) *-> *(-?[0-9.]+)$/.exec(line);
     if (!match) return { type: 'err', err: `expected line of format "$HISTORY -> $TRIP_ID: $DEPART->$ARRIVE"; got ${line}` };
     const [_, historyStr, tripIdStr, departStr, arriveStr] = match.map(s => s.trim());
-    if (tripIdStr.includes(',')) return { type: 'err', err: `trip id can't have a comma` };
+    if (tripIdStr.includes(';')) return { type: 'err', err: `trip id can't have a semicolon` };
     if (departStr.includes('.') || arriveStr.includes('.')) return { type: 'err', err: `integers only, sorry; floating-point errors are awful` };
     const tripId = tripIdStr as TripId;
     if (tripIds.has(tripId)) return { type: 'err', err: `duplicate trip id ${tripId}` };
-    const history = Set(historyStr.split(',').map(s => s.trim()).filter(x => x)) as Set<TripId>;
+    const history = Set(historyStr.split(';').map(s => s.trim()).filter(x => x)) as Set<TripId>;
     const [depart, arrive] = [departStr, arriveStr].map(s => parseInt(s)) as [CalTime, CalTime];
     rules = rules.update(history, List(), ts => ts.push(TripR({ id: tripId, depart, arrive })).sortBy(t => t.depart));
   };
@@ -45,7 +45,7 @@ function parseRuleset(s: string): Res<Ruleset> {
 function RulesetEditor({ init, onChange }: { init?: Ruleset, onChange: (ruleset: Ruleset) => void }) {
   const [textF, setTextF] = useState(() => !init ? '' : init
     .entrySeq()
-    .flatMap(([history, trips]) => trips.map(t => `${history.join(', ')} => ${t.id}: ${t.depart}->${t.arrive}`))
+    .flatMap(([history, trips]) => trips.map(t => `${history.join('; ')} => ${t.id}: ${t.depart}->${t.arrive}`))
     .join('\n')
   );
 
@@ -328,10 +328,9 @@ function GodViewE({ gv, onHover, highlightedTrip, fwd, bak }: {
 function App() {
   const [rules, setRules] = useState<Ruleset>((parseRuleset(`
     => Alice goes back to fix her party: 15->4
-    Alice goes back to fix her party => Alice tries to go back home: 6->16
-    Alice goes back to fix her party => Bob goes back to lay traps: 6->3
-    Alice goes back to fix her party, Bob goes back to lay traps => Charlie goes back to stop Bob: 8->2
-    Bob goes back to lay traps, Charlie goes back to stop Bob => Bob (having escaped Charlie) is baffled by Alice's failure to appear and figures he somehow missed her so he goes even further back: 6->-1
+    Alice goes back to fix her party => Alice tries to go back to the future: 6->16
+    Alice goes back to fix her party => Bob goes back to stop Alice: 6->3
+    Alice goes back to fix her party; Bob goes back to stop Alice => Charlie goes forward to talk Alice out of her initial jump: 8->14
   `) as Res<Ruleset> & { type: 'ok' }).val);
   useEffect(() => console.log(rules.toJS()), [rules]);
   // debugger;
@@ -414,20 +413,20 @@ function App() {
                 </li>
                 <li>
                   <Typography>
-                    "In timelines where Alice showed up on Jan 4: after stopping the party, Alice leaves on Jan 6, going back to Jan 16."<br />
-                    (Written: <code style={{ backgroundColor: '#eee' }}>&nbsp;{'Alice goes back to fix her party => Alice tries to go back home: 6->16'}</code>)
+                    "In timelines where Alice showed up on Jan 4: after stopping the party, Alice tries to go back to the future, leaves on Jan 6, going back to Jan 16."<br />
+                    (Written: <code style={{ backgroundColor: '#eee' }}>&nbsp;{'Alice goes back to fix her party => Alice tries to go back to the future: 6->16'}</code>)
                   </Typography>
                 </li>
                 <li>
                   <Typography>
-                    "In timelines where Alice showed up on Jan 4: Bob steals the time-travel device and goes back to Jan 3 to lay a trap for Alice."<br />
-                    (Written: <code style={{ backgroundColor: '#eee' }}>&nbsp;{'Alice goes back to fix her party => Bob goes back to lay traps: 6->3'}</code>)
+                    "In timelines where Alice showed up on Jan 4: Bob steals the time-travel device and goes back to Jan 3 to stop her."<br />
+                    (Written: <code style={{ backgroundColor: '#eee' }}>&nbsp;{'Alice goes back to fix her party => Bob goes back to stop Alice: 6->3'}</code>)
                   </Typography>
                 </li>
                 <li>
                   <Typography>
-                    "In timelines where Bob showed up on Jan 3, then Alice showed up on Jan 4: Charlie goes back to stop Bob, leaving Jan 8, aiming for Jan 2."<br />
-                    (Written: <code style={{ backgroundColor: '#eee' }}>&nbsp;{'Alice goes back to fix her party, Bob goes back to lay traps => Charlie goes back to stop Bob: 8->2'}</code>)
+                    "In timelines where Bob showed up on Jan 3, then Alice showed up on Jan 4: Charlie goes forward to talk Alice out of her initial jump, leaving Jan 8, aiming for Jan 14."<br />
+                    (Written: <code style={{ backgroundColor: '#eee' }}>&nbsp;{'Alice goes back to fix her party; Bob goes back to stop Alice => Charlie goes forward to talk Alice out of her initial jump: 8->14'}</code>)
                   </Typography>
                 </li>
               </ul>
