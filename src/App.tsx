@@ -80,6 +80,9 @@ function GodViewE({ gv, tripColors, onHover }: { gv: GodView, tripColors: Map<Tr
   const pxPerDay = 20 * Math.exp(scale);
 
   const [showArrows, setShowArrows] = useState(true);
+  const [showChunks, setShowChunks] = useState(false);
+  const [showGrid, setShowGrid] = useState(true);
+  const [gridSpacing, setGridSpacing] = useState(10);
 
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -101,7 +104,10 @@ function GodViewE({ gv, tripColors, onHover }: { gv: GodView, tripColors: Map<Tr
     <details><summary>Debug info (t={gv.now}, next={getNextInterestingTime(gv)})</summary>
       <ul>
         <li>Future events: <ul>{getNonPastEvents(gv).map((e, i) => <li key={i}>{e.tripId} at {e.r0}</li>)}</ul></li>
-        <li>Chunks: {gv.chunks.sortBy(c => c.start).map((c, i) => <span key={i}>({c.start}-{c.end}: {c.history})</span>)}</li>
+        <li>
+          <input type="checkbox" checked={showChunks} onChange={e => setShowChunks(e.target.checked)} />
+          Chunks: {showChunks && gv.chunks.sortBy(c => c.start).map((c, i) => <span key={i}>({c.start}-{c.end}: {c.history})</span>)}
+        </li>
         <li>Events: {gv.past.sortBy(b => b.start.r0).map((b, i) => <span key={i}>({b.start.r0}-{b.rf}: {b.start.tripId} h={b.start.departH0} to {b.start.arriveH0})</span>)}</li>
       </ul>
     </details>
@@ -113,6 +119,11 @@ function GodViewE({ gv, tripColors, onHover }: { gv: GodView, tripColors: Map<Tr
     <div>
       <input type="checkbox" checked={showArrows} onChange={e => setShowArrows(e.target.checked)} />
       Show arrows
+    </div>
+    <div>
+      <input type="checkbox" checked={showGrid} onChange={e => setShowGrid(e.target.checked)} />
+      Show grid lines every
+      <input type="number" min={0} value={gridSpacing} onChange={e => setGridSpacing(parseInt(e.target.value))} />
     </div>
 
     <div
@@ -130,7 +141,7 @@ function GodViewE({ gv, tripColors, onHover }: { gv: GodView, tripColors: Map<Tr
         borderLeft: '1px solid color-mix(in srgb, black, transparent 80%)',
       }}>now</div>
 
-      {gv.chunks.map((chunk, i) => <div key={i} style={{
+      {showChunks && gv.chunks.map((chunk, i) => <div key={i} style={{
         position: 'absolute',
         left: 0,
         width: `${maxRT * pxPerDay}px`,
@@ -142,6 +153,31 @@ function GodViewE({ gv, tripColors, onHover }: { gv: GodView, tripColors: Map<Tr
         {chunk.start === 0 && 'hypertimes '}{chunk.start}-{chunk.end}
         {/* : {chunk.history.sort().toArray()} */}
       </div>)}
+
+      {showGrid && gridSpacing > 0 && <>
+        {Array.from({ length: Math.ceil(maxRT / gridSpacing) }, (_, i) => i * gridSpacing).map(rt => <div key={rt} style={{
+          position: 'absolute',
+          left: `${rt * pxPerDay}px`,
+          width: '1px',
+          top: 0,
+          height: `${maxHT * pxPerDay}px`,
+          borderLeft: '1px solid color-mix(in srgb, black, transparent 90%)',
+          color: 'color-mix(in srgb, black, transparent 50%)',
+        }}>
+          {rt}
+        </div>)}
+        {Array.from({ length: Math.ceil(maxHT / gridSpacing) }, (_, i) => i * gridSpacing).map(ht => <div key={ht} style={{
+          position: 'absolute',
+          left: 0,
+          width: `${maxRT * pxPerDay}px`,
+          top: `${ht * pxPerDay}px`,
+          height: '1px',
+          borderBottom: '1px solid color-mix(in srgb, black, transparent 90%)',
+          color: 'color-mix(in srgb, black, transparent 50%)',
+        }}>
+          {ht}
+        </div>)}
+      </>}
 
       {gv.past.map((box, i) => {
         const dur = (box.rf - box.start.r0);
