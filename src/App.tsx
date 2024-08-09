@@ -391,14 +391,14 @@ function App() {
         Welcome to a <a href="https://qntm.org/hypertime">hypertime</a> simulator!
       </Typography>
 
-      <Accordion sx={{ m: 1 }} defaultExpanded>
-        <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+      <Accordion sx={{ m: 1 }}>
+        <AccordionSummary sx={{ maxWidth: '20em' }} expandIcon={<ExpandMoreIcon />}>
           <Typography variant='h4'> Huh? What? </Typography>
         </AccordionSummary>
         <AccordionDetails>
           <Typography>
             I'll assume you've read <a href="https://qntm.org/hypertime">qntm.org/hypertime</a>.
-            This simulator shows the visualization laid out there: "real" time increases left-to-right, "hypertime" increases top-to-bottom. Lines of constant "calendar time" (e.g. "Jan 1") are diagonal.
+            This simulator shows (roughly) the visualization laid out there: "real" time increases left-to-right, "hypertime" increases top-to-bottom. Lines of constant "calendar time" (e.g. "Jan 1") are diagonal, going down-and-right.
           </Typography>
           <Typography sx={{ mt: 1 }}>
             Core concepts for this simulator that <i>aren't</i> covered by qntm's article:
