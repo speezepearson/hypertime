@@ -101,7 +101,6 @@ function GodViewE({ gv, onHover }: { gv: GodView, onHover: (info: { r: RealTime,
     return () => refCurrent?.removeEventListener('mousemove', cb);
   }, []);
 
-  const maxRT = gv.past.map(b => b.rf).max() ?? 20;
   const maxHT = gv.past.flatMap(b => [b.start.departH0 + (b.rf - b.start.r0), b.start.arriveH0 + (b.rf - b.start.r0)]).max() ?? 20;
 
   return <div>
@@ -156,7 +155,7 @@ function GodViewE({ gv, onHover }: { gv: GodView, onHover: (info: { r: RealTime,
       {showChunks && gv.chunks.map((chunk, i) => <div key={i} style={{
         position: 'absolute',
         left: 0,
-        width: `${maxRT * pxPerDay}px`,
+        width: `${gv.now * pxPerDay}px`,
         top: `${chunk.start * pxPerDay}px`,
         height: `${(chunk.end - chunk.start) * pxPerDay}px`,
         // backgroundColor: 'rgba(0, 0, 0, 0.1)',
@@ -167,7 +166,7 @@ function GodViewE({ gv, onHover }: { gv: GodView, onHover: (info: { r: RealTime,
       </div>)}
 
       {showGrid && gridSpacing > 0 && <>
-        {Array.from({ length: Math.ceil(maxRT / gridSpacing) }, (_, i) => i * gridSpacing).map(rt => <div key={rt} style={{
+        {Array.from({ length: Math.ceil(gv.now / gridSpacing) }, (_, i) => i * gridSpacing).map(rt => <div key={rt} style={{
           position: 'absolute',
           left: `${rt * pxPerDay}px`,
           width: '1px',
@@ -181,7 +180,7 @@ function GodViewE({ gv, onHover }: { gv: GodView, onHover: (info: { r: RealTime,
         {Array.from({ length: Math.ceil(maxHT / gridSpacing) }, (_, i) => i * gridSpacing).map(ht => <div key={ht} style={{
           position: 'absolute',
           left: 0,
-          width: `${maxRT * pxPerDay}px`,
+          width: `${gv.now * pxPerDay}px`,
           top: `${ht * pxPerDay}px`,
           height: '1px',
           borderBottom: '1px solid color-mix(in srgb, black, transparent 90%)',
@@ -216,7 +215,7 @@ function GodViewE({ gv, onHover }: { gv: GodView, onHover: (info: { r: RealTime,
           transform: 'skew(45deg)',
           position: 'absolute',
           left: `${(box.start.r0 + dur / 2) * pxPerDay}px`,
-          width: `${(maxRT - box.start.r0) * pxPerDay}px`,
+          width: `${(gv.now - box.start.r0) * pxPerDay}px`,
           top: `${box.start.arriveH0 * pxPerDay}px`,
           height: `${pxPerDay * dur}px`,
           backgroundColor: `color-mix(in srgb, ${tripColors.get(box.start.tripId) ?? 'black'}, transparent 90%)`,
