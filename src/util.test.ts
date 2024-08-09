@@ -26,12 +26,15 @@ const mkChunk = (args: { start: number, end: number, history: string[] }) => Chu
   history: Set(args.history as TripId[]),
 });
 type LazyChunk = Parameters<typeof mkChunk>[0];
-const mkGodView = (args: { rules: [string[], LazyTrip[]][], now: number, chunks: LazyChunk[], past: LazyBox[] }) => GodViewR({
-  now: args.now as RealTime,
-  chunks: List(args.chunks.map(mkChunk)),
-  past: List(args.past.map(mkBox)),
-  rules: Map(args.rules.map(([history, trips]) => [Set(history as TripId[]), List(trips.map(mkTrip))]))
-});
+const mkGodView = (args: { rules: [string[], LazyTrip[]][], now: number, chunks: LazyChunk[], past: LazyBox[] }) => {
+  const rulesMap = Map(args.rules.map(([history, trips]) => [Set(history as TripId[]), List(trips.map(mkTrip))]));
+  return GodViewR({
+    now: args.now as RealTime,
+    chunks: List(args.chunks.map(mkChunk)),
+    past: List(args.past.map(mkBox)),
+    rules: h => rulesMap.get(h, List()),
+  });
+};
 // type LazyGodView = Parameters<typeof mkGodView>[0];
 
 describe('normalizeEvents', () => {

@@ -1,4 +1,4 @@
-import { List, Map, Set, Record } from 'immutable';
+import { List, Set, Record } from 'immutable';
 import * as iop from 'interval-operations';
 
 export const TotalRecord = <TProps extends object>(template: TProps): ((v: TProps) => ReturnType<Record.Factory<TProps>>) => Record(template);
@@ -92,7 +92,7 @@ export function normalizeChunks(chunks: List<Chunk>, noJoinAt?: Set<Hypertime>):
 }
 
 export const GodViewR = TotalRecord({
-  rules: undefined as any as Map<History, List<Trip>>,
+  rules: undefined as any as (h: History) => List<Trip>,
   now: undefined as any as RealTime,
   chunks: undefined as any as List<Chunk>,
   past: undefined as any as List<Box>,
@@ -144,7 +144,7 @@ export function timeUntilChunkEnd(chunks: List<Chunk>, h0: Hypertime): number {
 export function getNonPastEvents(gv: GodView): List<Event> {
   const res: Event[] = [];
   for (const chunk of gv.chunks) {
-    for (const trip of gv.rules.get(chunk.history) ?? []) {
+    for (const trip of gv.rules(chunk.history)) {
       const r0 = hc2rt({ h: chunk.start, c: trip.depart });
       const arriveH0 = rc2ht({ r: r0, c: trip.arrive });
       if (r0 < gv.now) continue;
@@ -152,7 +152,7 @@ export function getNonPastEvents(gv: GodView): List<Event> {
       if (r0 === gv.now && arriveH0 >= 0) {
         const arrivalChunk = gv.chunks.find(c => c.start <= arriveH0 && arriveH0 < c.end);
         if (!arrivalChunk) throw new Error('no chunk contains ' + arriveH0);
-        for (const nextTrip of gv.rules.get(arrivalChunk.history.add(trip.id)) ?? []) {
+        for (const nextTrip of gv.rules(arrivalChunk.history.add(trip.id))) {
           const r0 = hc2rt({ h: arriveH0, c: nextTrip.depart });
           const nextArriveH0 = rc2ht({ r: r0, c: nextTrip.arrive });
           if (r0 <= gv.now) continue;

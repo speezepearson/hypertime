@@ -5,10 +5,7 @@ import './App.css';
 import { CalTime, ChunkR, getNextInterestingTime, getNonPastEvents, GodView, GodViewR, History, Hypertime, RealTime, rh2ct, stepGodView, Trip, TripId, TripR } from './util';
 
 
-type Ruleset = {
-  rules: Map<History, List<Trip>>;
-  tripsById: Map<TripId, Trip>;
-};
+type Ruleset = Map<History, List<Trip>>;
 type Res<T> = { type: 'ok', val: T } | { type: 'err', err: string };
 
 function parseRuleset(s: string): Res<Ruleset> {
@@ -44,11 +41,11 @@ function parseRuleset(s: string): Res<Ruleset> {
     rules = rules.set(history, trips);
   }
 
-  return { type: 'ok', val: { rules, tripsById } };
+  return { type: 'ok', val: rules };
 }
 
 function RulesetEditor({ init, onChange }: { init?: Ruleset, onChange: (ruleset: Ruleset) => void }) {
-  const [textF, setTextF] = useState(() => !init ? '' : init.rules
+  const [textF, setTextF] = useState(() => !init ? '' : init
     .entrySeq()
     .map(([history, trips]) => `${history.join(', ')} -> ${trips.map(t => `${t.id},${t.depart},${t.arrive}`).join('; ')}`)
     .join('\n')
@@ -74,7 +71,7 @@ function RulesetEditor({ init, onChange }: { init?: Ruleset, onChange: (ruleset:
 // All these need to be readable against a white background.
 const COLORS = ['red', 'green', 'blue', 'purple', 'orange', 'magenta', 'cyan', 'brown', 'black', 'gray'];
 
-function GodViewE({ gv, tripColors, onHover }: { gv: GodView, tripColors: Map<TripId, string>, onHover: (info: { r: RealTime, h: Hypertime } | null) => void }) {
+function GodViewE({ gv, onHover }: { gv: GodView, onHover: (info: { r: RealTime, h: Hypertime } | null) => void }) {
 
   const [scale, setScale] = useState(0);
   const pxPerDay = 20 * Math.exp(scale);
@@ -83,6 +80,13 @@ function GodViewE({ gv, tripColors, onHover }: { gv: GodView, tripColors: Map<Tr
   const [showChunks, setShowChunks] = useState(false);
   const [showGrid, setShowGrid] = useState(true);
   const [gridSpacing, setGridSpacing] = useState(10);
+
+  // Find the color for each trip, assigning each trip's color before before knowing anything about any future trip,
+  // so that colors don't change as the user scans forward in time.
+  const tripColors: Map<TripId, string> = useMemo(() => Map(gv.past.sortBy(b => b.start.r0).reduce(
+    (acc, b) => acc.has(b.start.tripId) ? acc : acc.set(b.start.tripId, COLORS[acc.size % COLORS.length]),
+    Map<TripId, string>(),
+  )), [gv]);
 
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -101,6 +105,14 @@ function GodViewE({ gv, tripColors, onHover }: { gv: GodView, tripColors: Map<Tr
   const maxHT = gv.past.flatMap(b => [b.start.departH0 + (b.rf - b.start.r0), b.start.arriveH0 + (b.rf - b.start.r0)]).max() ?? 20;
 
   return <div>
+    <details>
+      <summary>Legend</summary>
+      <div>
+        <ul>
+          {tripColors.entrySeq().map(([id, color]) => <li key={id}><div style={{ padding: '0.5em', backgroundColor: `color-mix(in srgb, ${color}, transparent 90%)` }}> {id} </div></li>)}
+        </ul>
+      </div>
+    </details>
     <details><summary>Debug info (t={gv.now}, next={getNextInterestingTime(gv)})</summary>
       <ul>
         <li>Future events: <ul>{getNonPastEvents(gv).map((e, i) => <li key={i}>{e.tripId} at {e.r0}</li>)}</ul></li>
@@ -218,7 +230,7 @@ function GodViewE({ gv, tripColors, onHover }: { gv: GodView, tripColors: Map<Tr
 }
 
 function App() {
-  const [{ rules, tripsById }, setRules] = useState<{ rules: Map<History, List<Trip>>, tripsById: Map<TripId, Trip> }>((parseRuleset(`
+  const [rules, setRules] = useState<Ruleset>((parseRuleset(`
     -> a,10,2
     a -> b,15,8
     a, b -> c,18,30; d,20,9
@@ -232,7 +244,7 @@ function App() {
       ChunkR({ start: 0 as Hypertime, end: Infinity as Hypertime, history: Set() }),
     ]),
     past: List(),
-    rules,
+    rules: h => rules.get(h) ?? List(),
   }), [rules]);
   const [gvSteps, setGvSteps] = useState(List([gv0]));
   useEffect(() => setGvSteps(List([gv0])), [gv0]);
@@ -262,21 +274,12 @@ function App() {
     return () => window.removeEventListener('keydown', cb);
   }, [fwd, bak]);
 
-  const tripColors = useMemo(() => Map(tripsById.keySeq().sort().map((id, i) => [id, COLORS[i % COLORS.length]])), [tripsById]);
-
   return (
     <>
       <div>
-        <RulesetEditor init={{ rules, tripsById }} onChange={(ruleset: Ruleset) => {
+        <RulesetEditor init={rules} onChange={(ruleset: Ruleset) => {
           setRules(ruleset);
         }} />
-      </div>
-
-      <div>
-        Legend:
-        <ul>
-          {tripColors.entrySeq().sortBy(([id]) => id).map(([id, color]) => <li key={id} style={{ color }}>{id}</li>)}
-        </ul>
       </div>
 
       <div>
@@ -285,7 +288,7 @@ function App() {
         <button onClick={fwd}>→</button>
         <span> (or arrow keys)</span>
       </div>
-      <GodViewE gv={gvSteps.last()!} tripColors={tripColors} onHover={setHoveredCellInfo} />
+      <GodViewE gv={gvSteps.last()!} onHover={setHoveredCellInfo} />
 
       {hoveredCellInfo && <div className='hovered-cell-info'>
         <div>RealTime: {hoveredCellInfo.r.toFixed(2)}</div>
