@@ -79,6 +79,8 @@ function GodViewE({ gv, tripColors, onHover }: { gv: GodView, tripColors: Map<Tr
   const [scale, setScale] = useState(0);
   const pxPerDay = 20 * Math.exp(scale);
 
+  const [showArrows, setShowArrows] = useState(true);
+
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const cb = (e: MouseEvent) => {
@@ -104,8 +106,14 @@ function GodViewE({ gv, tripColors, onHover }: { gv: GodView, tripColors: Map<Tr
       </ul>
     </details>
 
-    Scale:
-    <input type='range' style={{ width: '200px' }} min={-5} max={5} step="any" value={scale} onChange={e => setScale(parseFloat(e.target.value))} />
+    <div>
+      Scale:
+      <input type='range' style={{ width: '200px' }} min={-5} max={5} step="any" value={scale} onChange={e => setScale(parseFloat(e.target.value))} />
+    </div>
+    <div>
+      <input type="checkbox" checked={showArrows} onChange={e => setShowArrows(e.target.checked)} />
+      Show arrows
+    </div>
 
     <div
       ref={ref}
@@ -147,10 +155,10 @@ function GodViewE({ gv, tripColors, onHover }: { gv: GodView, tripColors: Map<Tr
           top: `${box.start.departH0 * pxPerDay}px`,
           height: `${pxPerDay * dur}px`,
           color: color,
-          borderLeft: `0.5px solid color-mix(in srgb, ${color}, transparent)`,
+          borderLeft: `1px solid color-mix(in srgb, ${color}, transparent 70%)`,
           display: 'flex', flexDirection: up ? 'row' : 'row-reverse',
         }}>
-          {up ? '↗' : '↙'}
+          {!showArrows ? '' : up ? '↗' : '↙'}
         </div>
       })}
 
