@@ -10,36 +10,19 @@ type Res<T> = { type: 'ok', val: T } | { type: 'err', err: string };
 
 function parseRuleset(s: string): Res<Ruleset> {
 
-  let ruleLines: List<{ history: Set<TripId>, trips: List<Trip> }> = List();
+  let tripIds = Set<TripId>();
+  let rules: Ruleset = Map();
   for (const line of s.split('\n').map(s => s.trim()).filter(x => x)) {
-    const [historyStr, futureStr] = line.split('->').map(s => s.trim());
-    if (futureStr === undefined) return { type: 'err', err: 'Format: $HISTORY -> $FUTURE' };
-    const history = Set(historyStr.split(',').map(s => s.trim()).filter(x => x)) as Set<TripId>;
-    let trips = List<Trip>();
-    for (const tripS of futureStr.split(';').map(s => s.trim()).filter(x => x)) {
-      const match = /^(.*), *(-?[0-9]+) *, *(-?[0-9]+) *$/.exec(tripS);
-      if (!match) return { type: 'err', err: 'Format: $ID,$DEPART,ARRIVE; $ID,$DEPART,ARRIVE; ...' };
-      const [_, id, departS, arriveS] = match.map(s => s.trim());
-      if (arriveS === undefined) return { type: 'err', err: 'Format: $ID,$DEPART,$ARRIVE; $ID,$DEPART,$ARRIVE; ...' };
-      const [depart, arrive] = [departS, arriveS].map(s => parseInt(s)) as [CalTime, CalTime];
-      trips = trips.push(TripR({ id: id as TripId, depart, arrive }));
-    };
-    ruleLines = ruleLines.push({ history, trips });
+    const match = /^(.*) *=> *(.*): (-?[0-9]+) *-> *(-?[0-9]+)$/.exec(line);
+    if (!match) return { type: 'err', err: `expected line of format "$HISTORY -> $TRIP_ID: $DEPART->$ARRIVE"; got ${line}` };
+    const [_, historyStr, tripIdStr, departStr, arriveStr] = match.map(s => s.trim());
+    if (tripIdStr.includes(',')) return { type: 'err', err: `trip id can't have a comma` };
+    const tripId = tripIdStr as TripId;
+    if (tripIds.has(tripId)) return { type: 'err', err: `duplicate trip id ${tripId}` };
+    const history = Set(historyStr.split(',').map(s => s.trim()).filter(x => x && x !== '()')) as Set<TripId>;
+    const [depart, arrive] = [departStr, arriveStr].map(s => parseInt(s)) as [CalTime, CalTime];
+    rules = rules.update(history, List(), ts => ts.push(TripR({ id: tripId, depart, arrive })).sortBy(t => t.depart));
   };
-
-  let tripsById: Map<TripId, Trip> = Map();
-  for (const { trips } of ruleLines) {
-    for (const trip of trips) {
-      if (tripsById.has(trip.id)) return { type: 'err', err: `Duplicate id: ${trip.id}` };
-      tripsById = tripsById.set(trip.id, trip);
-    }
-  }
-
-  let rules: Map<History, List<Trip>> = Map();
-  for (const { history, trips } of ruleLines) {
-    if (rules.has(history)) return { type: 'err', err: `Duplicate history: ${history.sort().join(', ')}` };
-    rules = rules.set(history, trips);
-  }
 
   return { type: 'ok', val: rules };
 }
@@ -47,11 +30,35 @@ function parseRuleset(s: string): Res<Ruleset> {
 function RulesetEditor({ init, onChange }: { init?: Ruleset, onChange: (ruleset: Ruleset) => void }) {
   const [textF, setTextF] = useState(() => !init ? '' : init
     .entrySeq()
-    .map(([history, trips]) => `${history.join(', ')} -> ${trips.map(t => `${t.id},${t.depart},${t.arrive}`).join('; ')}`)
+    .flatMap(([history, trips]) => trips.map(t => `${history.isEmpty() ? '()' : history.join(', ')} => ${t.id}: ${t.depart}->${t.arrive}`))
     .join('\n')
   );
 
   const ruleset: Res<Ruleset> = useMemo(() => parseRuleset(textF), [textF]);
+
+  const warnings: List<string> = useMemo(() => {
+    if (ruleset.type === 'err') return List();
+    const res: string[] = [];
+
+    const definedTrips: Set<TripId> = ruleset.val.valueSeq().flatMap(ts => ts.map(t => t.id)).toSet();
+    for (const [history] of ruleset.val) {
+      for (const tid of history) {
+        if (!definedTrips.has(tid)) res.push(`trip ${tid} mentioned in LHS of rule but never defined on RHS of rule`);
+      }
+    }
+
+    const tripsById = Map(ruleset.val.valueSeq().flatMap(ts => ts.map(t => [t.id, t])));
+    for (const [history, trips] of ruleset.val) {
+      if (history.some(tid => !tripsById.has(tid))) continue;
+      const latestArrival = history.map(tid => tripsById.get(tid)!).maxBy(t => t.arrive);
+      if (!latestArrival) continue;
+      for (const t of trips) {
+        if (t.depart <= latestArrival.arrive) res.push(`trip ${JSON.stringify(t.id)} departs at ${t.depart}, but depends on ${JSON.stringify(latestArrival.id)} which arrives later, at ${latestArrival.arrive}`);
+      }
+    }
+
+    return List(res);
+  }, [ruleset]);
 
   const canSubmit = ruleset.type === 'ok';
   const submit = () => {
@@ -60,11 +67,12 @@ function RulesetEditor({ init, onChange }: { init?: Ruleset, onChange: (ruleset:
   }
 
   return <form onSubmit={e => { e.preventDefault(); submit() }}>
-    <textarea rows={10} style={{ minWidth: '20em' }} value={textF} onChange={e => setTextF(e.target.value)}
+    <textarea rows={10} style={{ width: '100%' }} value={textF} onChange={e => setTextF(e.target.value)}
       onKeyDown={e => { if (e.key === 'Enter' && e.metaKey) submit(); }}
     />
     <button type="submit" disabled={!canSubmit}>Update</button>
-    {ruleset.type === 'err' && <div style={{ color: 'red' }}>{ruleset.err}</div>}
+    {warnings.map((w, i) => <div key={i} style={{ color: 'red' }}>Warning: {w}</div>)}
+    {ruleset.type === 'err' && <div style={{ color: 'red' }}>Error: {ruleset.err}</div>}
   </form>
 }
 
@@ -88,6 +96,14 @@ function GodViewE({ gv, onHover }: { gv: GodView, onHover: (info: { r: RealTime,
     Map<TripId, string>(),
   )), [gv]);
 
+  const [highlightedTrips, setHighlightedTrips] = useState(Set<TripId>());
+
+  const boxStyles = useMemo(() => tripColors.mapEntries(([id, color]) => [id, {
+    borderLeft: `2px solid ${color}`,
+    backgroundColor: `color-mix(in srgb, ${color}, transparent 90%)`,
+    ...highlightedTrips.has(id) ? { outline: '1px dashed black' } : {},
+  }]), [tripColors, highlightedTrips]);
+
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const cb = (e: MouseEvent) => {
@@ -104,11 +120,20 @@ function GodViewE({ gv, onHover }: { gv: GodView, onHover: (info: { r: RealTime,
   const maxHT = gv.past.flatMap(b => [b.start.departH0 + (b.rf - b.start.r0), b.start.arriveH0 + (b.rf - b.start.r0)]).max() ?? 20;
 
   return <div>
-    <details>
+    <details open>
       <summary>Legend</summary>
+      (hover to highlight)
       <div>
         <ul>
-          {tripColors.entrySeq().map(([id, color]) => <li key={id}><div style={{ padding: '0.5em', backgroundColor: `color-mix(in srgb, ${color}, transparent 90%)` }}> {id} </div></li>)}
+          {boxStyles.entrySeq().map(([id, styles]) => <li key={id}>
+            <div style={{ transform: 'skew(45deg)', margin: '0.5em 1em', padding: '0.5em 1em', ...styles }}
+              onMouseEnter={() => setHighlightedTrips(s => s.add(id))} onMouseLeave={() => setHighlightedTrips(s => s.remove(id))}
+            >
+              <div style={{ transform: 'skew(-45deg)' }}>
+                {id}
+              </div>
+            </div>
+          </li>)}
         </ul>
       </div>
     </details>
@@ -194,33 +219,36 @@ function GodViewE({ gv, onHover }: { gv: GodView, onHover: (info: { r: RealTime,
         const dur = (box.rf - box.start.r0);
         const up = box.start.arriveH0 < box.start.departH0;
         const color = tripColors.get(box.start.tripId) ?? 'black';
-        return <div key={i} style={{
-          transform: 'skew(45deg)',
-          position: 'absolute',
-          left: `${(box.start.r0 + dur / 2) * pxPerDay}px`,
-          width: '0',
-          top: `${box.start.departH0 * pxPerDay}px`,
-          height: `${pxPerDay * dur}px`,
-          color: color,
-          borderLeft: `1px solid color-mix(in srgb, ${color}, transparent 70%)`,
-          display: 'flex', flexDirection: up ? 'row' : 'row-reverse',
-        }}>
+        return <div key={i}
+          style={{
+            transform: 'skew(45deg)',
+            position: 'absolute',
+            left: `${(box.start.r0 + dur / 2) * pxPerDay}px`,
+            width: '0',
+            top: `${box.start.departH0 * pxPerDay}px`,
+            height: `${pxPerDay * dur}px`,
+            borderLeft: `1px solid ${color}`,
+            color: color,
+            display: 'flex', flexDirection: up ? 'row' : 'row-reverse',
+          }}
+        >
           {!showArrows ? '' : up ? '↗' : '↙'}
         </div>
       })}
 
       {gv.past.map((box, i) => {
         const dur = (box.rf - box.start.r0);
-        return <div key={i} style={{
-          transform: 'skew(45deg)',
-          position: 'absolute',
-          left: `${(box.start.r0 + dur / 2) * pxPerDay}px`,
-          width: `${(gv.now - box.start.r0) * pxPerDay}px`,
-          top: `${box.start.arriveH0 * pxPerDay}px`,
-          height: `${pxPerDay * dur}px`,
-          backgroundColor: `color-mix(in srgb, ${tripColors.get(box.start.tripId) ?? 'black'}, transparent 90%)`,
-          borderLeft: `2px solid ${tripColors.get(box.start.tripId) ?? 'black'}`,
-        }}>
+        return <div key={i}
+          style={{
+            transform: 'skew(45deg)',
+            position: 'absolute',
+            left: `${(box.start.r0 + dur / 2) * pxPerDay}px`,
+            width: `${(gv.now - box.start.r0) * pxPerDay}px`,
+            top: `${box.start.arriveH0 * pxPerDay}px`,
+            height: `${pxPerDay * dur}px`,
+            ...boxStyles.get(box.start.tripId),
+          }}
+        >
           {/* {box.start.tripId}: r0 {box.start.r0} arr {box.start.arriveH0} dur {box.start.departH0 - box.start.arriveH0} */}
         </div>
       })}
@@ -230,10 +258,15 @@ function GodViewE({ gv, onHover }: { gv: GodView, onHover: (info: { r: RealTime,
 
 function App() {
   const [rules, setRules] = useState<Ruleset>((parseRuleset(`
-    -> a,10,2
-    a -> b,15,8
-    a, b -> c,18,30; d,20,9
+    () => Alice goes back to stop WWII: 15->4
+    Alice goes back to stop WWII => Alice goes back home: 6 -> 16
+
+    Alice goes back to stop WWII => Bob goes back to intercept Alice: 9->3
+    Alice goes back to stop WWII, Bob goes back to intercept Alice => Charlie goes back to stop Bob: 8->2
+    Alice goes back to stop WWII, Bob goes back to intercept Alice => Dolores jumps forward to talk Alice out of her first jump: 8->14
   `) as Res<Ruleset> & { type: 'ok' }).val);
+  useEffect(() => console.log(rules.toJS()), [rules]);
+  // debugger;
   const [hoveredCellInfo, setHoveredCellInfo] = useState<{ r: RealTime, h: Hypertime } | null>(null);
 
   const [showStep, setShowStep] = useState(20);
@@ -251,9 +284,11 @@ function App() {
     if (showStep <= 0) return List([gv0]);
     if (showStep < cur.size) return cur.slice(0, showStep + 1);
     while (showStep >= cur.size) {
-      cur = cur.push(stepGodView(cur.last()!));
+      const next = stepGodView(cur.last()!);
+      if (next.now === Infinity) break;
+      cur = cur.push(next);
     }
-    if (showStep !== cur.size - 1) throw new Error('showStep !== cur.size - 1');
+    // if (showStep !== cur.size - 1) throw new Error('showStep !== cur.size - 1');
     return cur;
   }), [rules, gv0, showStep]);
 
@@ -275,7 +310,24 @@ function App() {
 
   return (
     <>
+      <p>
+        Welcome to a <a href="https://qntm.org/hypertime">hypertime</a> simulator!
+      </p>
+
       <div>
+        <p>
+          Here's the ruleset editor. Each line defines a time travel event. For example:
+          <ul>
+            <li>
+              <code style={{ backgroundColor: '#eee' }}>&nbsp;{'() => Alice goes back to stop WWII: 15->4'}</code>
+              {' '} means "In worlds where no time travellers ever arrived: at time 15, Alice goes back to time 4, hoping to stop WWII."
+            </li>
+            <li>
+              <code style={{ backgroundColor: '#eee' }}>&nbsp;{'Alice goes back to stop WWII => Bob goes back to intercept Alice: 6->3'}</code>
+              {' '} means "In worlds where Alice showed up (which must have been at time 4) Alice went back to stop WWII: at time 6, Bob goes back to time 3, hoping to intercept Alice."
+            </li>
+          </ul>
+        </p>
         <RulesetEditor init={rules} onChange={(ruleset: Ruleset) => {
           setRules(ruleset);
         }} />
