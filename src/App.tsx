@@ -39,6 +39,7 @@ function parseRuleset(s: string): Res<Ruleset> {
     rules = rules.update(history, List(), ts => ts.push(TripR({ id: tripId, depart, arrive })).sortBy(t => t.depart));
   };
 
+  if (rules.isEmpty()) return { type: 'err', err: 'no rules found; what a boring universe!' };
   return { type: 'ok', val: rules };
 }
 
