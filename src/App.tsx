@@ -131,10 +131,11 @@ function Legend({ gv, onHover }: { gv: GodView, onHover: (t: TripId | null) => v
 
 }
 
-function GodViewE({ gv, onHover, highlightedTrip, fwd, bak }: {
+function GodViewE({ gv, onHover, highlightedTrip, zeroT, fwd, bak }: {
   gv: GodView,
   onHover: (info: { r: RealTime, h: Hypertime } | null) => void,
   highlightedTrip: TripId | null,
+  zeroT: () => void,
   fwd: () => void,
   bak: () => void,
 }) {
@@ -173,6 +174,7 @@ function GodViewE({ gv, onHover, highlightedTrip, fwd, bak }: {
       <Grid item xs={12} md={6} lg={4}>
         <Card sx={{ m: 1, p: 1 }}>
           <Stack direction='row' spacing={1} alignItems='center' justifyContent={'center'}>
+            <Button variant='outlined' onClick={zeroT}>0</Button>
             <Button variant='outlined' onClick={bak}>←</Button>
             <Typography sx={{ width: '16em', textAlign: 'center' }}>
               Simulating until real time = {gv.now}<br />
@@ -346,19 +348,24 @@ function App() {
     past: List(),
     rules: h => rules.get(h) ?? List(),
   }), [rules]);
-  const [gvSteps, setGvSteps] = useState(List([gv0]));
-  useEffect(() => setGvSteps(List([gv0])), [gv0]);
-  useEffect(() => setGvSteps(cur => {
-    if (showStep <= 0) return List([gv0]);
-    if (showStep < cur.size) return cur.slice(0, showStep + 1);
-    while (showStep >= cur.size) {
-      const next = stepGodView(cur.last()!);
-      if (next.now === Infinity) break;
-      cur = cur.push(next);
+
+  const [gv, setGv] = useState(gv0);
+  const gvStepsCache = useRef([gv0]);
+  useEffect(() => {
+    if (!gv0.equals(gvStepsCache.current[0])) gvStepsCache.current = [gv0];
+    const cache = gvStepsCache.current;
+
+    while (showStep >= cache.length - 1) {
+      const next = stepGodView(cache[cache.length - 1]);
+      if (next.now === Infinity) {
+        setGv(cache[cache.length - 1]);
+        return;
+      }
+      cache.push(next);
     }
-    // if (showStep !== cur.size - 1) throw new Error('showStep !== cur.size - 1');
-    return cur;
-  }), [rules, gv0, showStep]);
+
+    setGv(cache[showStep]);
+  }, [gv0, showStep]);
 
   const fwd = useCallback(() => {
     setShowStep(step => step + 1);
@@ -480,7 +487,7 @@ function App() {
               </AccordionSummary>
               <AccordionDetails>
                 <Stack direction='column' spacing={1}>
-                  <Legend gv={gvSteps.last()!} onHover={setHighlightedTrip} />
+                  <Legend gv={gv} onHover={setHighlightedTrip} />
                 </Stack>
               </AccordionDetails>
             </Accordion>
@@ -488,7 +495,7 @@ function App() {
         </Grid>
       </Grid>
 
-      <GodViewE gv={gvSteps.last()!} onHover={setHoveredCellInfo} highlightedTrip={highlightedTrip} fwd={fwd} bak={bak} />
+      <GodViewE gv={gv} onHover={setHoveredCellInfo} highlightedTrip={highlightedTrip} zeroT={() => setShowStep(0)} fwd={fwd} bak={bak} />
 
       {
         hoveredCellInfo && <div className='hovered-cell-info'>
