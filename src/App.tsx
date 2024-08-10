@@ -408,10 +408,10 @@ function App() {
               <Typography>
                 <b>The "ruleset."</b>{' '}
                 This is how you describe who travels between hypertimes.
-                A single "rule" is of the form: "if [THESE TIME TRAVELLERS] arrive, then [THIS TIME TRAVELLER] will depart." For example:
+                A single "rule" is of the form: "if [THESE TIME TRAVELLERS] arrive, then [THIS TIME TRAVELLER] will depart." Some examples:
               </Typography>
 
-              <ul>
+              <ol>
                 <li>
                   <Typography>
                     "If no time travellers show up in a timeline, then: on Jan 15, Alice will travel back to Jan 4, to prevent the disaster at her birthday party." <br />
@@ -437,7 +437,13 @@ function App() {
                     (Written: <code style={{ backgroundColor: '#eee' }}>&nbsp;{'Alice goes back to fix her party; Bob goes back to stop Alice => Charlie goes forward to talk Alice out of her initial jump: 8->14'}</code>)
                   </Typography>
                 </li>
-              </ul>
+              </ol>
+
+              <Typography sx={{ mt: 1 }}>
+                Note that, for a rule to apply to a given timeline, the timeline's history must <i>exactly</i> match the rule's left-hand side:
+                in a timeline where both Alice and Bob have showed up (as describe in rule 4's LHS), rule 3 doesn't get applied; yes, Alice showed up, but
+                Bob showed up too, so the history is "A and B," whereas rule 3 requires "A and only A."
+              </Typography>
             </li>
           </ul>
 
