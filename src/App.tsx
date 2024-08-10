@@ -18,14 +18,31 @@ import Typography from '@mui/material/Typography/Typography';
 import TextareaAutosize from '@mui/material/TextareaAutosize/TextareaAutosize';
 import Grid from '@mui/material/Grid/Grid';
 
-
-type Ruleset = Map<History, List<Trip>>;
+type Rule = {
+  history: {
+    required: Set<TripId>,
+    optional: Set<TripId>,
+    othersOk: boolean,
+  },
+  trips: List<Trip>,
+};
+type Ruleset = List<Rule>;
 type Res<T> = { type: 'ok', val: T } | { type: 'err', err: string };
+
+function cachingRules(rules: GodView['rules']): GodView['rules'] {
+  let cache = Map<History, List<Trip>>();
+  return (h: History) => {
+    if (cache.has(h)) return cache.get(h)!;
+    const res = rules(h);
+    cache = cache.set(h, res);
+    return res;
+  }
+}
 
 function parseRuleset(s: string): Res<Ruleset> {
 
   let tripIds = Set<TripId>();
-  let rules: Ruleset = Map();
+  let rules = List<Rule>();
   for (const line of s.split('\n').map(s => s.trim()).filter(x => x)) {
     const match = /^(.*) *=> *(.*): (-?[0-9.]+) *-> *(-?[0-9.]+)$/.exec(line);
     if (!match) return { type: 'err', err: `expected line of format "$HISTORY -> $TRIP_ID: $DEPART->$ARRIVE"; got ${line}` };
@@ -34,9 +51,15 @@ function parseRuleset(s: string): Res<Ruleset> {
     if (departStr.includes('.') || arriveStr.includes('.')) return { type: 'err', err: `integers only, sorry; floating-point errors are awful` };
     const tripId = tripIdStr as TripId;
     if (tripIds.has(tripId)) return { type: 'err', err: `duplicate trip id ${tripId}` };
-    const history = Set(historyStr.split(';').map(s => s.trim()).filter(x => x)) as Set<TripId>;
+
+    const historyChunks = List(historyStr.split(';').map(s => s.trim())).filter(s => s);
+    const history: Rule['history'] = {
+      required: historyChunks.filter(s => s !== '...' && !s.endsWith('?')).toSet() as Set<TripId>,
+      optional: historyChunks.filter(s => s.endsWith('?')).map(s => s.slice(0, -1)).toSet() as Set<TripId>,
+      othersOk: historyChunks.includes('...'),
+    }
     const [depart, arrive] = [departStr, arriveStr].map(s => parseInt(s)) as [CalTime, CalTime];
-    rules = rules.update(history, List(), ts => ts.push(TripR({ id: tripId, depart, arrive })).sortBy(t => t.depart));
+    rules = rules.push({ history, trips: List([TripR({ id: tripId, depart, arrive })]) });
   };
 
   if (rules.isEmpty()) return { type: 'err', err: 'no rules found; what a boring universe!' };
@@ -45,8 +68,7 @@ function parseRuleset(s: string): Res<Ruleset> {
 
 function RulesetEditor({ init, onChange }: { init?: Ruleset, onChange: (ruleset: Ruleset) => void }) {
   const [textF, setTextF] = useState(() => !init ? '' : init
-    .entrySeq()
-    .flatMap(([history, trips]) => trips.map(t => `${history.join('; ')} => ${t.id}: ${t.depart}->${t.arrive}`))
+    .flatMap((rule) => rule.trips.map(t => `${[...rule.history.required, ...rule.history.optional.map(s => s + '?'), ...rule.history.othersOk ? ['...'] : []].join('; ')} => ${t.id}: ${t.depart}->${t.arrive}`))
     .join('\n')
   );
 
@@ -56,20 +78,26 @@ function RulesetEditor({ init, onChange }: { init?: Ruleset, onChange: (ruleset:
     if (ruleset.type === 'err') return List();
     const res: string[] = [];
 
-    const definedTrips: Set<TripId> = ruleset.val.valueSeq().flatMap(ts => ts.map(t => t.id)).toSet();
-    for (const [history] of ruleset.val) {
-      for (const tid of history) {
-        if (!definedTrips.has(tid)) res.push(`trip ${tid} mentioned in LHS of rule but never defined on RHS of rule`);
+    const definedTrips: Set<TripId> = ruleset.val.flatMap(rule => rule.trips.map(t => t.id)).toSet();
+    for (const rule of ruleset.val) {
+      for (const tid of rule.history.required.concat(rule.history.optional)) {
+        if (!definedTrips.has(tid)) res.push(`trip ${JSON.stringify(tid)} mentioned in LHS of rule but never defined on RHS of rule`);
       }
     }
 
-    const tripsById = Map(ruleset.val.valueSeq().flatMap(ts => ts.map(t => [t.id, t])));
-    for (const [history, trips] of ruleset.val) {
-      if (history.some(tid => !tripsById.has(tid))) continue;
-      const latestArrival = history.map(tid => tripsById.get(tid)!).maxBy(t => t.arrive);
+    const tripsById = Map(ruleset.val.flatMap(rule => rule.trips.map(t => [t.id, t])));
+    for (const rule of ruleset.val) {
+      if (rule.history.required.concat(rule.history.optional).some(tid => !tripsById.has(tid))) continue;
+      const latestArrival = rule.history.required.concat(rule.history.optional).map(tid => tripsById.get(tid)!).maxBy(t => t.arrive);
       if (!latestArrival) continue;
-      for (const t of trips) {
+      for (const t of rule.trips) {
         if (t.depart <= latestArrival.arrive) res.push(`trip ${JSON.stringify(t.id)} departs at ${t.depart}, but depends on ${JSON.stringify(latestArrival.id)} which arrives later, at ${latestArrival.arrive}`);
+      }
+    }
+
+    for (const rule of ruleset.val) {
+      if (rule.history.othersOk && !rule.history.optional.isEmpty()) {
+        res.push(`rule ${rule.trips.map(t => t.id).join(', ')} has ... in its LHS, so its optional trips don't matter`);
       }
     }
 
@@ -333,7 +361,7 @@ function App() {
     => Alice goes back to fix her party: 15->4
     Alice goes back to fix her party => Alice tries to go back to the future: 6->16
     Alice goes back to fix her party => Bob goes back to stop Alice: 6->3
-    Alice goes back to fix her party; Bob goes back to stop Alice => Charlie goes forward to talk Alice out of her initial jump: 8->14
+    Alice goes back to fix her party; ... => Charlie goes forward to talk Alice out of her initial jump: 8->14
   `) as Res<Ruleset> & { type: 'ok' }).val);
   useEffect(() => console.log(rules.toJS()), [rules]);
   // debugger;
@@ -346,7 +374,7 @@ function App() {
       ChunkR({ start: 0 as Hypertime, end: Infinity as Hypertime, history: Set() }),
     ]),
     past: List(),
-    rules: h => rules.get(h) ?? List(),
+    rules: cachingRules(h => rules.flatMap(r => r.history.required.isSubset(h) && (r.history.othersOk || h.isSubset(r.history.required.union(r.history.optional))) ? r.trips : [])),
   }), [rules]);
 
   const [gv, setGv] = useState(gv0);
@@ -416,36 +444,59 @@ function App() {
                   <Typography>
                     "If no time travellers show up in a timeline, then: on Jan 15, Alice will travel back to Jan 4, to prevent the disaster at her birthday party." <br />
                     (In the format recognized by this simulator, this would be written:{' '}
-                    <code style={{ backgroundColor: '#eee' }}>&nbsp;{' => Alice goes back to fix her party: 15->4'}</code>.)
+                    <code>&nbsp;{' => Alice goes back to fix her party: 15->4'}</code>.)
                   </Typography>
                 </li>
                 <li>
                   <Typography>
                     "In timelines where Alice showed up on Jan 4: after stopping the party, Alice tries to go back to the future, leaves on Jan 6, going back to Jan 16."<br />
-                    (Written: <code style={{ backgroundColor: '#eee' }}>&nbsp;{'Alice goes back to fix her party => Alice tries to go back to the future: 6->16'}</code>)
+                    (Written: <code>{'Alice goes back to fix her party => Alice tries to go back to the future: 6->16'}</code>)
                   </Typography>
                 </li>
                 <li>
                   <Typography>
                     "In timelines where Alice showed up on Jan 4: Bob steals the time-travel device and goes back to Jan 3 to stop her."<br />
-                    (Written: <code style={{ backgroundColor: '#eee' }}>&nbsp;{'Alice goes back to fix her party => Bob goes back to stop Alice: 6->3'}</code>)
+                    (Written: <code>{'Alice goes back to fix her party => Bob goes back to stop Alice: 6->3'}</code>)
                   </Typography>
                 </li>
                 <li>
                   <Typography>
                     "In timelines where Bob showed up on Jan 3, then Alice showed up on Jan 4: Charlie goes forward to talk Alice out of her initial jump, leaving Jan 8, aiming for Jan 14."<br />
-                    (Written: <code style={{ backgroundColor: '#eee' }}>&nbsp;{'Alice goes back to fix her party; Bob goes back to stop Alice => Charlie goes forward to talk Alice out of her initial jump: 8->14'}</code>)
+                    (Written: <code>{'Alice goes back to fix her party; Bob goes back to stop Alice => Charlie goes forward to talk Alice out of her initial jump: 8->14'}</code>)
                   </Typography>
                 </li>
               </ol>
 
-              <Typography sx={{ mt: 1 }}>
-                Note that, for a rule to apply to a given timeline, the timeline's history must <i>exactly</i> match the rule's left-hand side:
-                in a timeline where both Alice and Bob have showed up (as describe in rule 4's LHS), rule 3 doesn't get applied; yes, Alice showed up, but
-                Bob showed up too, so the history is "A and B," whereas rule 3 requires "A and only A."
-              </Typography>
+              <Accordion sx={{ m: 1 }}>
+                <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                  <Typography><b>Ruleset details and syntax</b></Typography>
+                </AccordionSummary>
+                <AccordionDetails>
+                  <Typography sx={{ mt: 1 }}>
+                    By default, for a rule to apply to a given timeline, the timeline's history must <i>exactly</i> match the rule's left-hand side:
+                    in a timeline where A and B have both happened, the rule <code>{'A => C; 1->3'}</code> doesn't apply, because the timeline's history is "A and B,"
+                    whereas the rule only applies when "A and only A."
+                  </Typography>
+                  <Typography sx={{ mt: 1 }}>
+                    If you want your rules to be looser, there are two tools for that:
+                  </Typography>
+                  <ul>
+                    <li><Typography>
+                      <b>Question mark:</b><br />
+                      <code>{'A; B => C: 8->14'}</code> applies to timelines where A and B have shown up and nobody else has; <br />
+                      <code>{'A; B? => C: 8->14'}</code> applies to timelines where A has shown up, and <i>maybe</i> B has shown up too, but nobody else has.
+                    </Typography></li>
+                    <li><Typography>
+                      <b>Ellipsis:</b><br />
+                      <code>{'A; B => C: 8->14'}</code> applies to timelines where A and B have shown up and nobody else has; <br />
+                      <code>{'A; B; ... => C: 8->14'}</code> applies to all timelines where A and B have shown up, even if other people have too.
+                    </Typography></li>
+                  </ul>
+                </AccordionDetails>
+              </Accordion>
             </li>
           </ul>
+
 
           <Typography>
             ...I think that's it.
