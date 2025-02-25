@@ -415,9 +415,7 @@ function App() {
 
   return (
     <>
-      <Typography>
-        Welcome to a <a href="https://qntm.org/hypertime">hypertime</a> simulator!
-      </Typography>
+      <Typography variant='h2'> Hypertime Simulator </Typography>
 
       <Accordion sx={{ m: 1 }}>
         <AccordionSummary sx={{ maxWidth: '20em' }} expandIcon={<ExpandMoreIcon />}>
@@ -425,7 +423,7 @@ function App() {
         </AccordionSummary>
         <AccordionDetails>
           <Typography>
-            I'll assume you've read <a href="https://qntm.org/hypertime">qntm.org/hypertime</a>.
+            I'll assume you've read <a href="https://optimizationprocess.com/hypertime/">my description of hypertime</a> (or <a href="https://qntm.org/hypertime">qntm's</a>).
             This simulator shows (roughly) the visualization laid out there: "real" time increases left-to-right, "hypertime" increases top-to-bottom. Lines of constant "calendar time" (e.g. "Jan 1") are diagonal, going down-and-right.
           </Typography>
           <Typography sx={{ mt: 1 }}>
